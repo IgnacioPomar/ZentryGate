@@ -45,12 +45,8 @@ function zg_render_events_page ()
 			break;
 
 		case 'detail':
-			if (! zg_handle_detail_event_actions ())
-			{
-				$executed = true;
-				echo '<h2>ZentryGate - Detalle de Evento</h2>';
-				zg_render_event_detail ($eventId);
-			}
+			zg_render_event_details_page ($eventId);
+			$executed = true;
 			break;
 
 		default:

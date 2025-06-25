@@ -4,8 +4,20 @@
  * admin/events.php
  * Gestión de eventos para ZentryGate
  *
+ * Estructura JSON en la tabla wp_zgEvents, campo sectionsJson:
+ * [
+ *   {
+ *     "id": "sec_1612345678",  // identificador interno único (oculto en interfaz)
+ *     "label": "Day 1 - Morning", // nombre visible de la sección
+ *     "capacity": 50,              // aforo máximo (0 = indefinido)
+ *     "price": 20.00,              // precio en euros
+ *     "isHidden": false            // indicador de sección oculta
+ *   },
+ *   ...
+ * ]
+ *
  * - Crear, editar y eliminar eventos (nombre, fecha)
- * - Crear, editar y listar secciones con atributos: id, label, capacity, isHidden, price
+ * - Crear, editar y listar secciones con atributos: label, capacity, isHidden, price
  * - Crear y listar reglas (sin precio)
  * - Cada handler devuelve true si procesa una acción, false en caso contrario
  */
@@ -22,7 +34,6 @@ function zg_render_events_page()
 
     switch ($action) {
         case 'editevent':
-            // Si no hay POST de edición, mostrar formulario
             if (! zg_handle_edit_event_action()) {
                 $executed = true;
                 echo '<h2>Editar Evento</h2>';
@@ -31,7 +42,6 @@ function zg_render_events_page()
             break;
 
         case 'detail':
-            // Si no hay POST de detalle (secciones/reglas), mostrar detalle
             if (! zg_handle_detail_event_actions()) {
                 $executed = true;
                 echo '<h2>ZentryGate - Detalle de Evento</h2>';
@@ -40,13 +50,11 @@ function zg_render_events_page()
             break;
 
         default:
-            // Solo procesar creación/eliminación, luego listado si no se ejecutó
             if (zg_handle_general_event_actions()) {
                 $executed = true;
             }
     }
 
-    // Si ninguna acción renderizó nada aún, mostramos creación y listado
     if (! $executed) {
         echo '<h2>ZentryGate - Gestión de Eventos</h2>';
         zg_render_create_event_form();
@@ -67,7 +75,6 @@ function zg_handle_general_event_actions()
     $eventsTable = "{$wpdb->prefix}zgEvents";
     $handled = false;
 
-    // Crear evento
     if (isset($_POST['zg_create_event'])) {
         $wpdb->insert($eventsTable, [
             'name' => sanitize_text_field($_POST['eventName']),
@@ -79,11 +86,9 @@ function zg_handle_general_event_actions()
         $handled = true;
     }
 
-    // Eliminar evento
     if (isset($_POST['zg_delete_event'])) {
-        $eventId = intval($_POST['eventId']);
         $wpdb->delete($eventsTable, [
-            'id' => $eventId
+            'id' => intval($_POST['eventId'])
         ]);
         echo '<div class="notice notice-success"><p>Evento eliminado.</p></div>';
         $handled = true;
@@ -116,7 +121,7 @@ function zg_handle_edit_event_action()
 }
 
 /**
- * Crea/edita secciones y reglas dentro de un evento.
+ * Gestiona secciones y reglas dentro de un evento.
  *
  * @return bool True si procesó alguna acción, false en caso contrario.
  */
@@ -218,6 +223,10 @@ function zg_handle_detail_event_actions()
 // ------------------------------------------------
 // Vistas (formularios y listados)
 // ------------------------------------------------
+
+/**
+ * Formulario para crear un nuevo evento.
+ */
 function zg_render_create_event_form()
 {
     ?>
@@ -230,6 +239,9 @@ function zg_render_create_event_form()
     <?php
 }
 
+/**
+ * Listado de los eventos creados.
+ */
 function zg_list_created_events()
 {
     global $wpdb;
@@ -280,6 +292,9 @@ endforeach
     <?php
 }
 
+/**
+ * Formulario para editar un evento existente.
+ */
 function zg_render_edit_event_page($eventId)
 {
     global $wpdb;
@@ -310,6 +325,9 @@ echo admin_url('admin.php?page=zentrygate_events');
     <?php
 }
 
+/**
+ * Detalle de un evento: secciones y reglas.
+ */
 function zg_render_event_detail($eventId)
 {
     global $wpdb;
@@ -327,6 +345,9 @@ function zg_render_event_detail($eventId)
     }
 }
 
+/**
+ * Formulario para añadir una nueva sección al evento.
+ */
 function zg_render_sections_form($eventId)
 {
     ?>
@@ -345,6 +366,9 @@ echo esc_attr($eventId);
     <?php
 }
 
+/**
+ * Lista las secciones del evento, sin mostrar su ID en la interfaz.
+ */
 function zg_list_sections($eventId, $sections)
 {
     if (empty($sections)) {
@@ -356,7 +380,7 @@ function zg_list_sections($eventId, $sections)
     ?>
     <h4>Secciones</h4>
     <table class="widefat fixed striped">
-        <thead><tr><th>Etiqueta</th><th>ID</th><th>Aforo</th><th>Precio</th><th>Oculto</th><th>Acción</th></tr></thead>
+        <thead><tr><th>Etiqueta</th><th>Aforo</th><th>Precio</th><th>Oculto</th><th>Acción</th></tr></thead>
         <tbody>
         <?php
 
@@ -367,10 +391,6 @@ foreach ($sections as $sec) :
 
 echo esc_html($sec['label']);
         ?></td>
-                <td><code><?php
-
-echo esc_html($sec['id']);
-        ?></code></td>
                 <td><?php
 
 echo $sec['capacity'] === 0 ? '∞' : esc_html($sec['capacity']);
@@ -400,6 +420,9 @@ endforeach
     <?php
 }
 
+/**
+ * Lista las reglas del evento.
+ */
 function zg_list_rules($rules)
 {
     if (empty($rules)) {

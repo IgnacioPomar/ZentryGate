@@ -439,6 +439,7 @@ function zg_render_edit_section_form ($eventId, $sectionId)
 	$row = $wpdb->get_row ($wpdb->prepare ("SELECT sectionsJson FROM {$wpdb->prefix}zgEvents WHERE id = %d", $eventId));
 	$sections = json_decode ($row->sectionsJson, true) ?: [ ];
 	$current = null;
+
 	foreach ($sections as $sec)
 	{
 		if ($sec ['id'] === $sectionId)
@@ -447,39 +448,88 @@ function zg_render_edit_section_form ($eventId, $sectionId)
 			break;
 		}
 	}
+
 	if (! $current)
 	{
 		echo '<div class="notice notice-error"><p>Sección no encontrada.</p></div>';
 		return;
 	}
 	?>
-    <h4>Editar Sección</h4>
     <form method="post" style="margin-bottom:20px;">
-        <input type="hidden" name="eventId" value="<?php
+        <fieldset>
+            <legend>Editar Sección</legend>
 
-	echo esc_attr ($eventId);
+            <input type="hidden" name="eventId" value="<?php
+
+echo esc_attr ($eventId);
 	?>">
-        <input type="hidden" name="sectionId" value="<?php
+            <input type="hidden" name="sectionId" value="<?php
 
-	echo esc_attr ($sectionId);
+echo esc_attr ($sectionId);
 	?>">
-        <input type="text" name="sectionLabel" placeholder="Etiqueta de sección" value="<?php
 
-	echo esc_attr ($current ['label']);
+            <p>
+                <label for="sectionLabel_<?php
+
+echo esc_attr ($sectionId);
+	?>">Etiqueta de sección</label><br>
+                <input id="sectionLabel_<?php
+
+echo esc_attr ($sectionId);
+	?>" type="text" name="sectionLabel" value="<?php
+
+echo esc_attr ($current ['label']);
 	?>" required>
-        <input type="number" name="sectionCapacity" placeholder="Aforo (0=infinito)" min="0" value="<?php
+            </p>
 
-	echo esc_attr ($current ['capacity']);
+            <p>
+                <label for="sectionCapacity_<?php
+
+echo esc_attr ($sectionId);
+	?>">Aforo (0 = infinito)</label><br>
+                <input id="sectionCapacity_<?php
+
+echo esc_attr ($sectionId);
+	?>" type="number" name="sectionCapacity" min="0" value="<?php
+
+echo esc_attr ($current ['capacity']);
 	?>" required>
-        <input type="number" step="0.01" name="sectionPrice" placeholder="Precio (€)" value="<?php
+            </p>
 
-	echo esc_attr ($current ['price']);
+            <p>
+                <label for="sectionPrice_<?php
+
+echo esc_attr ($sectionId);
+	?>">Precio (€)</label><br>
+                <input id="sectionPrice_<?php
+
+echo esc_attr ($sectionId);
+	?>" type="number" step="0.01" name="sectionPrice" value="<?php
+
+echo esc_attr ($current ['price']);
 	?>" required>
-        <label><input type="checkbox" name="sectionHidden" <?php
+            </p>
 
-	checked ($current ['isHidden']);
-	?>> Oculto</label>
-        <button type="submit" name="zg_edit_section" class="button" title="Actualizar sección">✔️ Guardar</button>
+            <p>
+                <label for="sectionHidden_<?php
+
+echo esc_attr ($sectionId);
+	?>">
+                    <input id="sectionHidden_<?php
+
+echo esc_attr ($sectionId);
+	?>" type="checkbox" name="sectionHidden" <?php
+
+checked ($current ['isHidden']);
+	?>>
+                    Oculto
+                </label>
+            </p>
+
+            <button type="submit" name="zg_edit_section" class="button" title="Actualizar sección">
+                ✔️ Guardar
+            </button>
+        </fieldset>
     </form>
     <?php
 }

@@ -8,11 +8,83 @@
  */
 
 /**
- * Gestiona secciones y reglas dentro de un evento.
+ * Renderiza toda la página de detalle de evento (dispatch por subaction).
  *
- * @return bool True si procesó alguna acción, false en caso contrario.
+ * @param int $eventId
  */
-function zg_handle_detail_event_actions ()
+function zg_render_event_details_page ($eventId)
+{
+	global $wpdb;
+	$table = $wpdb->prefix . 'zgEvents';
+
+	// Obtener nombre y fecha
+	$event = $wpdb->get_row ($wpdb->prepare ("SELECT name, date FROM {$table} WHERE id = %d", $eventId));
+	$formatted_date = date_i18n (get_option ('date_format'), strtotime ($event->date));
+	printf ('<h2>ZentryGate – Detalle de Evento – %s (%s)</h2>', esc_html ($event->name), esc_html ($formatted_date));
+
+	$subaction = sanitize_text_field ($_GET ['subaction'] ?? '');
+	$executed = false;
+
+	switch ($subaction)
+	{
+
+		case 'editsection':
+			if (! zg_handle_detail_event_editsection ())
+			{
+				$sectionId = sanitize_text_field ($_GET ['sectionId'] ?? '');
+				zg_render_edit_section_form ($eventId, $sectionId);
+				$executed = true;
+			}
+			break;
+
+		case 'deletesection':
+			zg_handle_detail_event_deletesection ();
+			break;
+
+		// ------------------------------------------------------------------------
+
+		case 'addrule':
+			if (! zg_handle_detail_event_addrule ())
+			{
+				zg_render_add_rule_form ($eventId);
+				$executed = true;
+			}
+			break;
+
+		case 'editrule':
+			if (! zg_handle_detail_event_editrule ())
+			{
+				$ruleIndex = intval ($_GET ['ruleIndex'] ?? - 1);
+				zg_render_edit_rule_form ($eventId, $ruleIndex);
+				$executed = true;
+			}
+			break;
+
+		case 'deleterule':
+			zg_handle_detail_event_deleterule ();
+			break;
+
+		// ------------------------------------------------------------------------
+		default:
+			// If we dont have a subaction, the only possible action is to add a new section
+			zg_handle_detail_event_addsection ();
+			break;
+	}
+
+	if (! $executed)
+	{
+		// Si no se ha ejecutado ninguna acción, mostramos el detalle del evento
+		zg_render_event_detail ($eventId);
+	}
+}
+
+
+/**
+ * Add a new section to the event.
+ *
+ * @return bool True if the section was added, false otherwise.
+ */
+function zg_handle_detail_event_addsection ()
 {
 	global $wpdb;
 	$eventsTable = $wpdb->prefix . 'zgEvents';
@@ -20,7 +92,6 @@ function zg_handle_detail_event_actions ()
 	$eventId = intval ($_REQUEST ['eventId'] ?? 0);
 	$handled = false;
 
-	// Añadir sección
 	if (isset ($_POST ['zg_add_section']))
 	{
 		$label = sanitize_text_field ($_POST ['sectionLabel']);
@@ -37,7 +108,23 @@ function zg_handle_detail_event_actions ()
 		$handled = true;
 	}
 
-	// Editar sección
+	return $handled;
+}
+
+
+/**
+ * Edit an existing section of the event.
+ *
+ * @return bool True if the section was edited, false otherwise.
+ */
+function zg_handle_detail_event_editsection ()
+{
+	global $wpdb;
+	$eventsTable = $wpdb->prefix . 'zgEvents';
+	$capTable = $wpdb->prefix . 'zgCapacity';
+	$eventId = intval ($_REQUEST ['eventId'] ?? 0);
+	$handled = false;
+
 	if (isset ($_POST ['zg_edit_section']))
 	{
 		$sectionId = sanitize_text_field ($_POST ['sectionId']);
@@ -65,6 +152,76 @@ function zg_handle_detail_event_actions ()
 		$handled = true;
 	}
 
+	return $handled;
+}
+
+
+/**
+ * Delete a section from the event.
+ *
+ * @return bool True if the section was deleted, false otherwise.
+ */
+function zg_handle_detail_event_deletesection ()
+{
+	global $wpdb;
+	$eventsTable = $wpdb->prefix . 'zgEvents';
+	$capTable = $wpdb->prefix . 'zgCapacity';
+	$eventId = intval ($_REQUEST ['eventId'] ?? 0);
+	$handled = false;
+
+	// Identificador de la sección a eliminar
+	$sectionId = sanitize_text_field ($_GET ['sectionId'] ?? '');
+
+	// Obtener el JSON actual de secciones
+	$sections = json_decode ($wpdb->get_var ($wpdb->prepare ("SELECT sectionsJson FROM {$eventsTable} WHERE id = %d", $eventId)), true) ?: [ ];
+
+	// Filtrar la sección a eliminar
+	$newSections = [ ];
+	foreach ($sections as $section)
+	{
+		if ((string) $section ['id'] !== $sectionId)
+		{
+			$newSections [] = $section;
+		}
+	}
+
+	// Si no había nada que eliminar, salimos
+	if (count ($newSections) === count ($sections))
+	{
+		echo '<div class="notice notice-warning"><p>Sección no encontrada.</p></div>';
+		return false;
+	}
+
+	// Actualizar el JSON de secciones en la tabla de eventos
+	$updated = $wpdb->update ($eventsTable, [ 'sectionsJson' => wp_json_encode ($newSections)], [ 'id' => $eventId], [ '%s'], [ '%d']);
+
+	// Eliminar la sección de la tabla de capacidad
+	$deleted = $wpdb->delete ($capTable, [ 'eventId' => $eventId, 'sectionId' => $sectionId], [ '%d', '%s']);
+
+	if (false === $updated || false === $deleted)
+	{
+		echo '<div class="notice notice-error"><p>Error al eliminar la sección.</p></div>';
+	}
+	else
+	{
+		echo '<div class="notice notice-success"><p>Sección eliminada correctamente.</p></div>';
+		$handled = true;
+	}
+
+	return $handled;
+}
+
+
+/**
+ * Delete a rule from the event.
+ */
+function zg_handle_detail_event_addrule ()
+{
+	global $wpdb;
+	$eventsTable = $wpdb->prefix . 'zgEvents';
+	$eventId = intval ($_REQUEST ['eventId'] ?? 0);
+	$handled = false;
+
 	// Añadir regla
 	if (isset ($_POST ['zg_add_rule']))
 	{
@@ -80,7 +237,20 @@ function zg_handle_detail_event_actions ()
 		}
 	}
 
-	// Editar regla
+	return $handled;
+}
+
+
+/**
+ * Delete a rule from the event.
+ */
+function zg_handle_detail_event_editrule ()
+{
+	global $wpdb;
+	$eventsTable = $wpdb->prefix . 'zgEvents';
+	$eventId = intval ($_REQUEST ['eventId'] ?? 0);
+	$handled = false;
+
 	if (isset ($_POST ['zg_edit_rule']))
 	{
 		$ruleIndex = intval ($_POST ['ruleIndex']);
@@ -98,7 +268,26 @@ function zg_handle_detail_event_actions ()
 		}
 	}
 
-	// Eliminar regla
+	return $handled;
+}
+
+
+// zg_handle_detail_event_editrule
+
+/**
+ * Delete a rule from the event.
+ *
+ * @return bool True if the rule was deleted, false otherwise.
+ */
+function zg_handle_detail_event_deleterule ()
+{
+	global $wpdb;
+	$eventsTable = $wpdb->prefix . 'zgEvents';
+	$eventId = intval ($_REQUEST ['eventId'] ?? 0);
+	$ruleIndex = intval ($_REQUEST ['ruleIndex'] ?? - 1);
+
+	$handled = false;
+
 	if (isset ($_REQUEST ['subaction']) && $_REQUEST ['subaction'] === 'deleterule' && isset ($_GET ['ruleIndex']))
 	{
 		$ruleIndex = intval ($_GET ['ruleIndex']);
@@ -117,82 +306,7 @@ function zg_handle_detail_event_actions ()
 }
 
 
-/**
- * Renderiza toda la página de detalle de evento (dispatch por subaction).
- *
- * @param int $eventId
- */
-function zg_render_event_details_page ($eventId)
-{
-	global $wpdb;
-	$table = $wpdb->prefix . 'zgEvents';
-	// Obtener nombre y fecha
-	$event = $wpdb->get_row ($wpdb->prepare ("SELECT name, date FROM {$table} WHERE id = %d", $eventId));
-	$formatted_date = date_i18n (get_option ('date_format'), strtotime ($event->date));
-	printf ('<h2>ZentryGate – Detalle de Evento – %s (%s)</h2>', esc_html ($event->name), esc_html ($formatted_date));
-
-	$subaction = sanitize_text_field ($_GET ['subaction'] ?? '');
-
-	switch ($subaction)
-	{
-		case 'addsection':
-			if (zg_handle_detail_event_actions ())
-			{
-				zg_render_event_detail ($eventId);
-			}
-			break;
-
-		case 'editsection':
-			if (zg_handle_detail_event_actions ())
-			{
-				zg_render_event_detail ($eventId);
-			}
-			else
-			{
-				$sectionId = sanitize_text_field ($_GET ['sectionId'] ?? '');
-				zg_render_edit_section_form ($eventId, $sectionId);
-			}
-			break;
-
-		case 'addrule':
-			if (zg_handle_detail_event_actions ())
-			{
-				zg_render_event_detail ($eventId);
-			}
-			else
-			{
-				zg_render_add_rule_form ($eventId);
-			}
-			break;
-
-		case 'editrule':
-			if (zg_handle_detail_event_actions ())
-			{
-				zg_render_event_detail ($eventId);
-			}
-			else
-			{
-				$ruleIndex = intval ($_GET ['ruleIndex'] ?? - 1);
-				zg_render_edit_rule_form ($eventId, $ruleIndex);
-			}
-			break;
-
-		case 'deleterule':
-			if (zg_handle_detail_event_actions ())
-			{
-				zg_render_event_detail ($eventId);
-			}
-			break;
-
-		default:
-			if (! zg_handle_detail_event_actions ())
-			{
-				zg_render_event_detail ($eventId);
-			}
-			break;
-	}
-}
-
+// zg_handle_detail_event_deleterule
 
 /**
  * Vista principal de detalle: lista secciones, formularios y reglas.
@@ -272,9 +386,11 @@ function zg_list_sections ($eventId, $sections)
 		?></td>
                     <td>
                         <a href="<?php
-
 		echo esc_url (admin_url ("admin.php?page=zentrygate_events&action=detail&subaction=editsection&eventId={$eventId}&sectionId=" . urlencode ($sec ['id'])));
 		?>" class="button" title="Editar sección">🖉</a>
+		<a href="<?php
+		echo esc_url (admin_url ("admin.php?page=zentrygate_events&action=detail&subaction=deletesection&eventId={$eventId}&sectionId=" . urlencode ($sec ['id'])));
+		?>" class="button" title="Eliminar sección">🗑</a>
                     </td>
                 </tr>
             <?php

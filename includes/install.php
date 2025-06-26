@@ -1,15 +1,16 @@
 <?php
 
-function zg_activate_plugin()
+
+function zg_activate_plugin ()
 {
-    global $wpdb, $zentrygateDbVersion;
+	global $wpdb, $zentrygateDbVersion;
 
-    $charsetCollate = $wpdb->get_charset_collate();
-    $prefix = $wpdb->prefix;
+	$charsetCollate = $wpdb->get_charset_collate ();
+	$prefix = $wpdb->prefix;
 
-    require_once (ABSPATH . 'wp-admin/includes/upgrade.php');
+	require_once (ABSPATH . 'wp-admin/includes/upgrade.php');
 
-    $sqlUsers = "CREATE TABLE {$prefix}zgUsers (
+	$sqlUsers = "CREATE TABLE {$prefix}zgUsers (
         email VARCHAR(255) NOT NULL,
         name VARCHAR(255) NOT NULL,
         passwordHash VARCHAR(255) DEFAULT NULL,
@@ -20,7 +21,7 @@ function zg_activate_plugin()
         PRIMARY KEY (email)
     ) $charsetCollate;";
 
-    $sqlEvents = "CREATE TABLE {$prefix}zgEvents (
+	$sqlEvents = "CREATE TABLE {$prefix}zgEvents (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
         name VARCHAR(255) NOT NULL,
         date DATE NOT NULL,
@@ -29,7 +30,7 @@ function zg_activate_plugin()
         PRIMARY KEY (id)
     ) $charsetCollate;";
 
-    $sqlReservations = "CREATE TABLE {$prefix}zgReservations (
+	$sqlReservations = "CREATE TABLE {$prefix}zgReservations (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
         userEmail VARCHAR(255) NOT NULL,
         eventId BIGINT UNSIGNED NOT NULL,
@@ -41,19 +42,18 @@ function zg_activate_plugin()
         KEY idxEvent (eventId)
     ) $charsetCollate;";
 
-    $sqlCapacity = "CREATE TABLE {$prefix}zgCapacity (
-        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+	$sqlCapacity = "CREATE TABLE {$prefix}zgCapacity (
         eventId BIGINT UNSIGNED NOT NULL,
         sectionId VARCHAR(255) NOT NULL,
         maxCapacity INT NOT NULL,
-        PRIMARY KEY (id),
-        KEY idxEventSection (eventId, sectionId)
+		usedCapacity INT NOT NULL,
+        PRIMARY KEY (eventId, sectionId)
     ) $charsetCollate;";
 
-    dbDelta($sqlUsers);
-    dbDelta($sqlEvents);
-    dbDelta($sqlReservations);
-    dbDelta($sqlCapacity);
+	dbDelta ($sqlUsers);
+	dbDelta ($sqlEvents);
+	dbDelta ($sqlReservations);
+	dbDelta ($sqlCapacity);
 
-    add_option('zgDbVersion', $zentrygateDbVersion);
+	add_option ('zgDbVersion', $zentrygateDbVersion);
 }

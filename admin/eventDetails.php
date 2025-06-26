@@ -1,35 +1,11 @@
 <?php
+
+
 /**
  * eventDetails.php
  *
  * Gestión de secciones y reglas de un evento en el plugin ZentryGate.
  */
-if (! defined ('ABSPATH'))
-{
-	exit ();
-}
-
-
-/**
- * Normaliza el array de secciones para que siempre use la clave 'id'.
- *
- * @param array $sections
- *        	Array decodificado de sectionsJson.
- * @return array Secciones con la clave 'id' unificada.
- */
-function zg_normalize_sections (array $sections): array
-{
-	return array_map (function ($sec)
-	{
-		if (isset ($sec ['sectionId']) && ! isset ($sec ['id']))
-		{
-			$sec ['id'] = $sec ['sectionId'];
-			unset ($sec ['sectionId']);
-		}
-		return $sec;
-	}, $sections);
-}
-
 
 /**
  * Gestiona secciones y reglas dentro de un evento.
@@ -51,8 +27,8 @@ function zg_handle_detail_event_actions ()
 		$capacity = intval ($_POST ['sectionCapacity']);
 		$price = floatval ($_POST ['sectionPrice']);
 		$isHidden = isset ($_POST ['sectionHidden']);
-		$raw = json_decode ($wpdb->get_var ($wpdb->prepare ("SELECT sectionsJson FROM {$eventsTable} WHERE id = %d", $eventId)), true) ?: [ ];
-		$sections = zg_normalize_sections ($raw);
+		$sections = json_decode ($wpdb->get_var ($wpdb->prepare ("SELECT sectionsJson FROM {$eventsTable} WHERE id = %d", $eventId)), true) ?: [ ];
+
 		$sectionId = (string) abs (crc32 (uniqid ()));
 		$sections [] = [ 'id' => $sectionId, 'label' => $label, 'capacity' => $capacity, 'price' => $price, 'isHidden' => $isHidden];
 		$wpdb->update ($eventsTable, [ 'sectionsJson' => wp_json_encode ($sections)], [ 'id' => $eventId], [ '%s'], [ '%d']);
@@ -69,8 +45,8 @@ function zg_handle_detail_event_actions ()
 		$capacity = intval ($_POST ['sectionCapacity']);
 		$price = floatval ($_POST ['sectionPrice']);
 		$isHidden = isset ($_POST ['sectionHidden']);
-		$raw = json_decode ($wpdb->get_var ($wpdb->prepare ("SELECT sectionsJson FROM {$eventsTable} WHERE id = %d", $eventId)), true) ?: [ ];
-		$sections = zg_normalize_sections ($raw);
+		$sections = json_decode ($wpdb->get_var ($wpdb->prepare ("SELECT sectionsJson FROM {$eventsTable} WHERE id = %d", $eventId)), true) ?: [ ];
+
 		foreach ($sections as &$sec)
 		{
 			if ($sec ['id'] === $sectionId)
@@ -93,8 +69,7 @@ function zg_handle_detail_event_actions ()
 	if (isset ($_POST ['zg_add_rule']))
 	{
 		$row = $wpdb->get_row ($wpdb->prepare ("SELECT sectionsJson, rulesJson FROM {$eventsTable} WHERE id = %d", $eventId));
-		$sectionsRaw = json_decode ($row->sectionsJson, true) ?: [ ];
-		$sections = zg_normalize_sections ($sectionsRaw);
+		$sections = json_decode ($row->sectionsJson, true) ?: [ ];
 		if (! empty ($sections))
 		{
 			$rules = json_decode ($row->rulesJson, true) ?: [ ];
@@ -228,8 +203,7 @@ function zg_render_event_detail ($eventId)
 {
 	global $wpdb;
 	$row = $wpdb->get_row ($wpdb->prepare ("SELECT sectionsJson, rulesJson FROM {$wpdb->prefix}zgEvents WHERE id = %d", $eventId));
-	$rawSections = json_decode ($row->sectionsJson, true) ?: [ ];
-	$sections = zg_normalize_sections ($rawSections);
+	$sections = json_decode ($row->sectionsJson, true) ?: [ ];
 	$rules = json_decode ($row->rulesJson, true) ?: [ ];
 
 	// Volver al listado de eventos
@@ -276,36 +250,35 @@ function zg_list_sections ($eventId, $sections)
         <tbody>
             <?php
 
-foreach ($sections as $sec)
+	foreach ($sections as $sec)
 	:
 		?>
                 <tr>
                     <td><?php
 
-echo esc_html ($sec ['label']);
+		echo esc_html ($sec ['label']);
 		?></td>
                     <td><?php
 
-echo $sec ['capacity'] === 0 ? '∞' : esc_html ($sec ['capacity']);
+		echo $sec ['capacity'] === 0 ? '∞' : esc_html ($sec ['capacity']);
 		?></td>
                     <td><?php
 
-echo esc_html (number_format ($sec ['price'], 2));
+		echo esc_html (number_format ($sec ['price'], 2));
 		?></td>
                     <td><?php
 
-echo $sec ['isHidden'] ? 'Sí' : 'No';
+		echo $sec ['isHidden'] ? 'Sí' : 'No';
 		?></td>
                     <td>
                         <a href="<?php
 
-echo esc_url (admin_url ("admin.php?page=zentrygate_events&action=detail&subaction=editsection&eventId={$eventId}&sectionId=" . urlencode ($sec ['id'])));
+		echo esc_url (admin_url ("admin.php?page=zentrygate_events&action=detail&subaction=editsection&eventId={$eventId}&sectionId=" . urlencode ($sec ['id'])));
 		?>" class="button" title="Editar sección">🖉</a>
                     </td>
                 </tr>
             <?php
-
-endforeach
+	endforeach
 	;
 	?>
         </tbody>
@@ -326,7 +299,7 @@ function zg_render_sections_form ($eventId)
     <form method="post" style="margin-bottom:20px;">
         <input type="hidden" name="eventId" value="<?php
 
-echo esc_attr ($eventId);
+	echo esc_attr ($eventId);
 	?>">
         <input type="text" name="sectionLabel" placeholder="Etiqueta de sección" required>
         <input type="number" name="sectionCapacity" placeholder="Aforo (0=infinito)" min="0" required>
@@ -348,8 +321,7 @@ function zg_render_edit_section_form ($eventId, $sectionId)
 {
 	global $wpdb;
 	$row = $wpdb->get_row ($wpdb->prepare ("SELECT sectionsJson FROM {$wpdb->prefix}zgEvents WHERE id = %d", $eventId));
-	$raw = json_decode ($row->sectionsJson, true) ?: [ ];
-	$sections = zg_normalize_sections ($raw);
+	$sections = json_decode ($row->sectionsJson, true) ?: [ ];
 	$current = null;
 	foreach ($sections as $sec)
 	{
@@ -369,27 +341,27 @@ function zg_render_edit_section_form ($eventId, $sectionId)
     <form method="post" style="margin-bottom:20px;">
         <input type="hidden" name="eventId" value="<?php
 
-echo esc_attr ($eventId);
+	echo esc_attr ($eventId);
 	?>">
         <input type="hidden" name="sectionId" value="<?php
 
-echo esc_attr ($sectionId);
+	echo esc_attr ($sectionId);
 	?>">
         <input type="text" name="sectionLabel" placeholder="Etiqueta de sección" value="<?php
 
-echo esc_attr ($current ['label']);
+	echo esc_attr ($current ['label']);
 	?>" required>
         <input type="number" name="sectionCapacity" placeholder="Aforo (0=infinito)" min="0" value="<?php
 
-echo esc_attr ($current ['capacity']);
+	echo esc_attr ($current ['capacity']);
 	?>" required>
         <input type="number" step="0.01" name="sectionPrice" placeholder="Precio (€)" value="<?php
 
-echo esc_attr ($current ['price']);
+	echo esc_attr ($current ['price']);
 	?>" required>
         <label><input type="checkbox" name="sectionHidden" <?php
 
-checked ($current ['isHidden']);
+	checked ($current ['isHidden']);
 	?>> Oculto</label>
         <button type="submit" name="zg_edit_section" class="button" title="Actualizar sección">✔️ Guardar</button>
     </form>
@@ -419,40 +391,39 @@ function zg_list_rules ($eventId, $rules)
         <tbody>
             <?php
 
-foreach ($rules as $index => $r)
+	foreach ($rules as $index => $r)
 	:
 		?>
                 <tr>
                     <td><?php
 
-echo esc_html ($r ['rule']);
+		echo esc_html ($r ['rule']);
 		?></td>
                     <td><?php
 
-echo esc_html (join (', ', $r ['cond']));
+		echo esc_html (join (', ', $r ['cond']));
 		?></td>
                     <td><?php
 
-echo ! empty ($r ['optional']) ? 'Sí' : 'No';
+		echo ! empty ($r ['optional']) ? 'Sí' : 'No';
 		?></td>
                     <td><?php
 
-echo esc_html ($r ['action']);
+		echo esc_html ($r ['action']);
 		?></td>
                     <td>
                         <a href="<?php
 
-echo esc_url (admin_url ("admin.php?page=zentrygate_events&action=detail&subaction=editrule&eventId={$eventId}&ruleIndex={$index}"));
+		echo esc_url (admin_url ("admin.php?page=zentrygate_events&action=detail&subaction=editrule&eventId={$eventId}&ruleIndex={$index}"));
 		?>" class="button" title="Editar regla">🖉</a>
                         <a href="<?php
 
-echo esc_url (admin_url ("admin.php?page=zentrygate_events&action=detail&subaction=deleterule&eventId={$eventId}&ruleIndex={$index}"));
+		echo esc_url (admin_url ("admin.php?page=zentrygate_events&action=detail&subaction=deleterule&eventId={$eventId}&ruleIndex={$index}"));
 		?>" class="button" onclick="return confirm('¿Eliminar esta regla?');" title="Eliminar regla">🗑️</a>
                     </td>
                 </tr>
             <?php
-
-endforeach
+	endforeach
 	;
 	?>
         </tbody>
@@ -470,13 +441,13 @@ function zg_render_add_rule_form ($eventId)
 {
 	global $wpdb;
 	$row = $wpdb->get_row ($wpdb->prepare ("SELECT sectionsJson FROM {$wpdb->prefix}zgEvents WHERE id = %d", $eventId));
-	$sections = zg_normalize_sections (json_decode ($row->sectionsJson, true) ?: [ ]);
+	$sections = json_decode ($row->sectionsJson, true) ?: [ ];
 	?>
     <h4>Añadir Regla</h4>
     <form method="post" style="margin-bottom:20px;">
         <input type="hidden" name="eventId" value="<?php
 
-echo esc_attr ($eventId);
+	echo esc_attr ($eventId);
 	?>">
         <label>Nombre de la regla:<br>
             <input type="text" name="ruleName" required>
@@ -484,19 +455,18 @@ echo esc_attr ($eventId);
         <label>Condiciones:<br>
         <?php
 
-foreach ($sections as $sec)
+	foreach ($sections as $sec)
 	:
 		?>
             <label><input type="checkbox" name="ruleConds[]" value="<?php
 
-echo esc_attr ($sec ['id']);
+		echo esc_attr ($sec ['id']);
 		?>"> <?php
 
-echo esc_html ($sec ['label']);
+		echo esc_html ($sec ['label']);
 		?></label><br>
         <?php
-
-endforeach
+	endforeach
 	;
 	?>
         </label>
@@ -520,7 +490,7 @@ function zg_render_edit_rule_form ($eventId, $ruleIndex)
 {
 	global $wpdb;
 	$row = $wpdb->get_row ($wpdb->prepare ("SELECT sectionsJson, rulesJson FROM {$wpdb->prefix}zgEvents WHERE id = %d", $eventId));
-	$sections = zg_normalize_sections (json_decode ($row->sectionsJson, true) ?: [ ]);
+	$sections = json_decode ($row->sectionsJson, true) ?: [ ];
 	$rules = json_decode ($row->rulesJson, true) ?: [ ];
 
 	if (! isset ($rules [$ruleIndex]))
@@ -534,49 +504,48 @@ function zg_render_edit_rule_form ($eventId, $ruleIndex)
     <form method="post" style="margin-bottom:20px;">
         <input type="hidden" name="eventId" value="<?php
 
-echo esc_attr ($eventId);
+	echo esc_attr ($eventId);
 	?>">
         <input type="hidden" name="ruleIndex" value="<?php
 
-echo esc_attr ($ruleIndex);
+	echo esc_attr ($ruleIndex);
 	?>">
         <label>Nombre de la regla:<br>
             <input type="text" name="ruleName" value="<?php
 
-echo esc_attr ($current ['rule']);
+	echo esc_attr ($current ['rule']);
 	?>" required>
         </label><br>
         <label>Condiciones:<br>
         <?php
 
-foreach ($sections as $sec)
+	foreach ($sections as $sec)
 	:
 		$checked = in_array ($sec ['id'], $current ['cond'], true);
 		?>
             <label><input type="checkbox" name="ruleConds[]" value="<?php
 
-echo esc_attr ($sec ['id']);
+		echo esc_attr ($sec ['id']);
 		?>" <?php
 
-checked ($checked);
+		checked ($checked);
 		?>> <?php
 
-echo esc_html ($sec ['label']);
+		echo esc_html ($sec ['label']);
 		?></label><br>
         <?php
-
-endforeach
+	endforeach
 	;
 	?>
         </label>
         <label>Opcional: <input type="checkbox" name="ruleOptional" <?php
 
-checked (! empty ($current ['optional']));
+	checked (! empty ($current ['optional']));
 	?>></label><br>
         <label>Acción:<br>
             <input type="text" name="ruleAction" value="<?php
 
-echo esc_attr ($current ['action']);
+	echo esc_attr ($current ['action']);
 	?>" required>
         </label><br>
         <button type="submit" name="zg_edit_rule" class="button" title="Actualizar regla">✔️ Guardar</button>

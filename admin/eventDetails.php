@@ -46,7 +46,7 @@ function zg_render_event_details_page ($eventId)
 
 		case 'addrule':
 
-			$rules = [ ];
+			$rules = json_decode ($event->rulesJson, true) ?: [ ];
 
 			if (! zg_handle_detail_event_addrule ($eventId, $rules))
 			{
@@ -376,7 +376,7 @@ function zg_handle_detail_event_editrule ($eventId, array &$rules)
 	}
 
 	// Verificar nonce
-	if (! wp_verify_nonce ($_POST ['zg_add_rule_nonce'], 'zg_add_rule_' . $eventId))
+	if (! wp_verify_nonce ($_POST ['zg_edit_rule_nonce'], 'zg_edit_rule_' . $eventId))
 	{
 		wp_die ('No autorizado.');
 	}
@@ -1021,14 +1021,18 @@ function zg_render_rule_form (int $eventId, array $sections, ?array $ruleData = 
 	// Valores por defecto para nueva regla
 	if (! $isEdit)
 	{
-		$ruleData = [ 'id' => '', 'description' => '', 'conditions' => [ ], 'actions' => [ ]];
+		$ruleData = [ 'name' => '', 'triggers' => [ ], 'actions' => [ ]];
+
+		// Make sure actions is an array
+		$actions [] = [ 'showPage' => ''];
+	}
+	else
+	{
+		$actions = $ruleData ['actions'] ?: [ ];
 	}
 
 	// Mapeo de condiciones existentes (sectionId => operator)
 	$condMap = is_array ($ruleData ['triggers']) ? $ruleData ['triggers'] : [ ];
-
-	// Asegurar al menos una acción
-	$actions = $ruleData ['actions'] ?: [ [ 'showPage' => '']];
 
 	// Datos para JS: páginas y secciones ocultas
 	$wpPages = get_pages ([ 'sort_column' => 'post_title']);
@@ -1137,7 +1141,7 @@ function zg_render_rule_form (int $eventId, array $sections, ?array $ruleData = 
                 pages.forEach(pg => sel.appendChild(makeOption(pg.ID, pg.post_title, row.dataset.pageId == pg.ID)));
                 lbl.appendChild(sel); p.appendChild(lbl); paramsDiv.appendChild(p);
 
-            } else if (type === 'unhideSection') {
+            } else if (type === 'allowSectionSubscription') {
                 const p = document.createElement('p');
                 const lbl = document.createElement('label'); lbl.textContent = 'Sección oculta: ';
                 const sel = document.createElement('select'); sel.name = `actions[${idx}][sectionId]`;

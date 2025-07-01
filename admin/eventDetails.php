@@ -780,6 +780,15 @@ function zg_list_rules (int $eventId, array $ruleList, array $sections)
 		return;
 	}
 
+	// Obtener lista de páginas para mostrar en las acciones
+	$wpPages = get_pages ([ 'sort_column' => 'post_title']);
+	$pagesMap = [ ];
+
+	foreach ($wpPages as $page)
+	{
+		$pagesMap [$page->ID] = $page->post_title;
+	}
+
 	// 1) Mapear las secciones para lookup rápido de etiquetas
 	$labelMap = [ ];
 	foreach ($sections as $s)
@@ -854,12 +863,12 @@ function zg_list_rules (int $eventId, array $ruleList, array $sections)
 					switch ($type)
 					{
 						case 'showPage':
-							$acts [] = sprintf ('Mostrar página "%s"', esc_html ($value));
+							$acts [] = sprintf ('Mostrar página "%s".', esc_html ($pagesMap [$value]));
 							break;
 
 						case 'allowSectionSubscription':
 							$label = $labelMap [intval ($value)] ?? intval ($value);
-							$acts [] = sprintf ('Permitir suscripción sección "%s"', esc_html ($label));
+							$acts [] = sprintf ('Permitir suscripción sección "%s".', esc_html ($label));
 							break;
 
 						default:
@@ -869,7 +878,7 @@ function zg_list_rules (int $eventId, array $ruleList, array $sections)
 					}
 				}
 			}
-			echo esc_html (implode ('; ', $acts));
+			echo implode ('<br > ', $acts);
 		}
 		?>
             </td>
@@ -929,7 +938,7 @@ function zg_render_rule_form_actions (array $actions)
         >
             <?php
 
-if ($idx > 1)
+		if ($idx > 1)
 		:
 			?>
                 <button type="button" class="remove-action" style="position:absolute;top:5px;right:5px;">

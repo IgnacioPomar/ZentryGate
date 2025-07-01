@@ -344,10 +344,11 @@ function zg_handle_detail_event_addrule ($eventId, array &$rules): bool
 
 	// Build the new rule from POST data
 	$newRule = zg_build_rule_from_post ($_POST);
-	$newRule ['id'] = (string) abs (crc32 (uniqid ())); // Generate a integer unique ID for the rule
+	$newRule ['id'] = abs (crc32 (uniqid ())); // Generate a integer unique ID for the rule
 
 	// Append y actualizar en BB.DD.
 	$rules [] = $newRule;
+
 	$updated = $wpdb->update ($table, [ 'rulesJson' => wp_json_encode ($rules)], [ 'id' => $eventId], [ '%s'], [ '%d']);
 	if (false === $updated)
 	{
@@ -395,6 +396,7 @@ function zg_handle_detail_event_editrule ($eventId, array &$rules)
 		{
 			// Recreate the rule from POST data
 			$rules [$idx] = zg_build_rule_from_post ($_POST);
+			$rules [$idx] ['id'] = $ruleId; // Keep the same ID
 			break;
 		}
 	}
@@ -408,83 +410,6 @@ function zg_handle_detail_event_editrule ($eventId, array &$rules)
 	// Redirigir para evitar reenvío
 	echo '<div class="notice notice-success"><p>Regla modificada correctamente.</p></div>';
 	return true;
-
-	// --------------------------
-	/*
-	 * global $wpdb;
-	 * $eventsTable = $wpdb->prefix . 'zgEvents';
-	 * $eventId = intval ($_REQUEST ['eventId'] ?? 0);
-	 * $handled = false;
-	 *
-	 * if (isset ($_POST ['zg_edit_rule']))
-	 * {
-	 *
-	 * // 1) Obtengo el ID de la regla que vino en el form
-	 * $postedRule = $_POST ['rule'];
-	 * $postedId = intval ($postedRule ['id']);
-	 *
-	 * // 2) Traigo el JSON actual de la BD
-	 * $row = $wpdb->get_row ($wpdb->prepare ("SELECT rulesJson FROM {$eventsTable} WHERE id = %d", $eventId));
-	 * $rules = json_decode ($row->rulesJson, true) ?: [ ];
-	 *
-	 * // 3) Recorro y actualizo solo la regla cuyo 'id' coincide
-	 * foreach ($rules as &$r)
-	 * {
-	 * if (intval ($r ['id']) === $postedId)
-	 * {
-	 * // 3.a) Descripción
-	 * $r ['description'] = sanitize_text_field ($postedRule ['description']);
-	 * // 3.b) Condiciones
-	 * $r ['conditions'] = [ ];
-	 * if (! empty ($_POST ['conditions']) && is_array ($_POST ['conditions']))
-	 * {
-	 * foreach ($_POST ['conditions'] as $sectionId => $ops)
-	 * {
-	 * foreach ((array) $ops as $op)
-	 * {
-	 * if (in_array ($op, [ 'subscribed', 'notSubscribed'], true))
-	 * {
-	 * $r ['conditions'] [] = [ 'sectionId' => intval ($sectionId), 'operator' => sanitize_text_field ($op)];
-	 * }
-	 * }
-	 * }
-	 * }
-	 * // 3.c) Acciones
-	 * $r ['actions'] = [ ];
-	 * if (! empty ($_POST ['actions']) && is_array ($_POST ['actions']))
-	 * {
-	 * foreach ($_POST ['actions'] as $act)
-	 * {
-	 * if (empty ($act ['type']))
-	 * {
-	 * continue;
-	 * }
-	 * $a = [ 'type' => sanitize_text_field ($act ['type'])];
-	 * if (isset ($act ['pageId']))
-	 * {
-	 * $a ['pageId'] = intval ($act ['pageId']);
-	 * }
-	 * if (isset ($act ['sectionId']))
-	 * {
-	 * $a ['sectionId'] = intval ($act ['sectionId']);
-	 * }
-	 * $r ['actions'] [] = $a;
-	 * }
-	 * }
-	 * break;
-	 * }
-	 * }
-	 * unset ($r);
-	 *
-	 * // 4) Vuelvo a codificar y actualizar en BD
-	 * $wpdb->update ($eventsTable, [ 'rulesJson' => wp_json_encode ($rules, JSON_UNESCAPED_UNICODE)], [ 'id' => $eventId], [ '%s'], [ '%d']);
-	 *
-	 * echo '<div class="notice notice-success"><p>Regla actualizada correctamente.</p></div>';
-	 * $handled = true;
-	 * }
-	 *
-	 * return $handled;
-	 */
 }
 
 

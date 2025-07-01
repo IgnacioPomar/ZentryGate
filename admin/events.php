@@ -5,22 +5,6 @@
  * admin/events.php
  * Gestión de eventos para ZentryGate
  *
- * Estructura JSON en la tabla wp_zgEvents, campo sectionsJson:
- * [
- *   {
- *     "id": "sec_1612345678",  // identificador interno único (oculto en interfaz)
- *     "label": "Day 1 - Morning", // nombre visible de la sección
- *     "capacity": 50,              // aforo máximo (0 = indefinido)
- *     "price": 20.00,              // precio en euros
- *     "isHidden": false            // indicador de sección oculta
- *   },
- *   ...
- * ]
- *
- * - Crear, editar y eliminar eventos (nombre, fecha)
- * - Crear, editar y listar secciones con atributos: label, capacity, isHidden, price
- * - Crear y listar reglas (sin precio)
- * - Cada handler devuelve true si procesa una acción, false en caso contrario
  */
 
 /**

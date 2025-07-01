@@ -1042,7 +1042,7 @@ function zg_render_rule_form (int $eventId, array $sections, ?array $ruleData = 
         const hiddenSections = <?=wp_json_encode ($hiddenJs);?>;
         const container = document.getElementById('zg-actions-container');
         const addBtn = document.getElementById('add-action');
-        let actionIndex = container.querySelectorAll('.rule-action-row').length;
+        let actionIndex = container.querySelectorAll('.rule-action-row').length +1; // Empezar desde el siguiente índice
 
         function makeOption(value, text, selected) {
             const opt = document.createElement('option');

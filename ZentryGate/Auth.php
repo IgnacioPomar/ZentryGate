@@ -1,0 +1,243 @@
+<?php
+
+namespace ZentryGate;
+
+/**
+ * Handles authentication, cookie consent, and session management for ZentryGate plugin.
+ */
+class Auth
+{
+	private static bool $isInitialized = false;
+	private static string $sessionDir;
+	private static ?array $cookieData = null;
+	private static ?array $userData = null;
+
+
+	/**
+	 * Initialize the Auth system (should be called on 'init' hook)
+	 */
+	public static function init (): void
+	{
+		if (self::$isInitialized)
+		{
+			return;
+		}
+
+		self::$sessionDir = rtrim (sys_get_temp_dir (), '/') . '/Zentrygate/';
+		if (! is_dir (self::$sessionDir))
+		{
+			mkdir (self::$sessionDir, 0700, true);
+		}
+
+		self::$cookieData = null;
+		self::$userData = null;
+
+		self::loadCookieData ();
+		self::processEarlyActions ();
+		self::$isInitialized = true;
+	}
+
+
+	/**
+	 * Load and decode cookie data.
+	 */
+	private static function loadCookieData (): void
+	{
+		if (! empty ($_COOKIE ['ZentryGate']))
+		{
+			$decodedCookie = base64_decode (str_pad (strtr ($_COOKIE ['ZentryGate'], '-_', '+/'), strlen ($_COOKIE ['ZentryGate']) % 4, '=', STR_PAD_RIGHT));
+			$data = json_decode ($decodedCookie, true);
+			if (is_array ($data))
+			{
+				self::$cookieData = $data;
+			}
+		}
+	}
+
+
+	private static function saveCookieData (): void
+	{
+		$cookieContent = rtrim (strtr (base64_encode (json_encode (self::$cookieData)), '+/', '-_'), '=');
+		setcookie ('ZentryGate', $cookieContent, time () + 365 * 24 * 60 * 60, "/");
+	}
+
+
+	/**
+	 * This method should be called early in the request lifecycle to ensure session data is available.
+	 *
+	 * Checks if the cookie was accepted, and if th Acceptance Post was submitted, it generates the cookie.
+	 * If the cookie is accepted:
+	 * - If there is a POST request for login, it clears sessionData, validates credentials, saves to disk, and sets the cookie.
+	 * - If there is no POST request, it validates the session from the file if it exists and fills sessionData.
+	 */
+	private static function processEarlyActions (): void
+	{
+		if (self::$cookieData === null)
+		{
+			if (isset ($_POST ['accept_ZentryGate_cookie']))
+			{
+				self::$cookieData = [ 'accepted' => true];
+				self::saveCookieData ();
+			}
+		}
+		else
+		{
+			if (isset ($_POST ['zg_email'], $_POST ['zg_password']))
+			{
+				if (self::checkLoginForm ())
+				{
+					// Login successful: create session file and set cookie
+					$nonce = bin2hex (random_bytes (16));
+					$fileId = bin2hex (random_bytes (16));
+
+					$cookieDta = &self::$cookieData;
+					$cookieDta ['sessId'] = $fileId;
+					$cookieDta ['nonce'] = $nonce;
+					$cookieDta ['emailHash'] = md5 (trim ($_POST ['zg_email']));
+
+					self::saveCookieData ();
+
+					// YAGNI: Improve the security with a session table with multiples sessions per user
+					// Generate the session file
+					$session = [ 'nonce' => $nonce, 'email' => trim ($_POST ['zg_email'])];
+					$sessionFile = self::$sessionDir . $fileId . '.json';
+					file_put_contents ($sessionFile, json_encode ($session));
+				}
+				else
+				{
+					// Login failed, clear session data
+					self::$cookieData = [ 'accepted' => true];
+					self::saveCookieData ();
+				}
+			}
+			else
+			{
+				// Coockie exists, and no post request for login: check session file
+				$cookieDta = &self::$cookieData;
+				$sessionFile = self::$sessionDir . $cookieDta ['sessId'] . '.json';
+
+				if (file_exists ($sessionFile))
+				{
+					$sessionJson = file_get_contents ($sessionFile);
+					$session = json_decode ($sessionJson, true);
+
+					if (is_array ($session) && isset ($session ['nonce']) && $session ['nonce'] === $cookieDta ['nonce'] && $cookieDta ['emailHash'] === md5 ($session ['email']))
+					{
+						// Check if the user is enabled, and load user data
+						self::checkUserStillEnabled ($session ['email']);
+					}
+					else
+					{
+						// The nonce does not match... so its a hacking attempt: There is no valid login, without information
+					}
+				}
+				else
+				{
+					// There is no session file... it may be expired, or a hacking attempt: There is no valid login, without information
+				}
+			}
+		}
+	}
+
+
+	/**
+	 * Check if the ZentryGate cookie is accepted.
+	 */
+	public static function isCookieAccepted (): bool
+	{
+		return self::$cookieData !== null;
+	}
+
+
+	/**
+	 * Check if we have a valid user session (loader by coockie or by Form).
+	 */
+	public static function isLoggedIn (): bool
+	{
+		return self::$userData !== null;
+	}
+
+
+	/**
+	 * Get the session data for the logged-in user.
+	 */
+	public static function getSessionData (): array
+	{
+		return self::$userData ?? [ ];
+	}
+
+
+	/**
+	 * Render the cookie acceptance form.
+	 */
+	public static function renderCookiePrompt (): void
+	{
+		?>
+        <form method="post" class="zentrygate-cookie-consent">
+            <p>This site uses cookies to operate. Please accept to continue.</p>
+            <button type="submit" name="accept_ZentryGate_cookie">Accept</button>
+        </form>
+        <?php
+	}
+
+
+	/**
+	 * Render the login form.
+	 */
+	public static function renderLoginForm (): void
+	{
+		?>
+        <form method="post" class="zentrygate-login-form">
+            <label>Email: <input type="email" name="zg_email" required></label><br>
+            <label>Password: <input type="password" name="zg_password" required></label><br>
+            <button type="submit" name="zg_login">Login</button>
+        </form>
+        <?php
+	}
+
+
+	/**
+	 * Check if the user is still enabled and load user data.
+	 */
+	private static function checkUserStillEnabled (string $email): void
+	{
+		global $wpdb;
+		$user = $wpdb->get_row ($wpdb->prepare ("SELECT * FROM {$wpdb->prefix}zgUsers WHERE email = %s", $email), ARRAY_A);
+
+		if ($user && $user ['isEnabled'])
+		{
+			self::$userData = [ 'name' => $user ['name'], 'isAdmin' => (bool) $user ['isAdmin'], 'isEnabled' => (bool) $user ['isEnabled'], 'lastLogin' => current_time ('mysql')];
+		}
+		else
+		{
+			self::$userData = null; // User is not enabled or does not exist
+		}
+	}
+
+
+	/**
+	 * Check login credentials from form and store session if successful.
+	 */
+	private static function checkLoginForm (): bool
+	{
+		if ($_SERVER ['REQUEST_METHOD'] !== 'POST' || ! isset ($_POST ['zg_email'], $_POST ['zg_password']))
+		{
+			return false;
+		}
+
+		$email = trim ($_POST ['zg_email']);
+		$password = $_POST ['zg_password'];
+
+		global $wpdb;
+		$user = $wpdb->get_row ($wpdb->prepare ("SELECT * FROM {$wpdb->prefix}zgUsers WHERE email = %s", $email), ARRAY_A);
+
+		if (! $user || ! password_verify ($password, $user ['passwordHash']) || ! $user ['isEnabled'])
+		{
+			return false;
+		}
+
+		self::$userData = [ 'name' => $user ['name'], 'isAdmin' => (bool) $user ['isAdmin'], 'isEnabled' => (bool) $user ['isEnabled'], 'lastLogin' => current_time ('mysql')];
+
+		return self::$userData ['isEnabled'] ?? false;
+	}
+}

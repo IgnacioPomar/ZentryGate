@@ -172,12 +172,26 @@ class Auth
 	 */
 	public static function renderCookiePrompt (): void
 	{
+		// Asegúrate de llamar a wp_enqueue_style o inline CSS para .zg-cookie-form si lo deseas
 		?>
-        <form method="post" class="zentrygate-cookie-consent">
-            <p>This site uses cookies to operate. Please accept to continue.</p>
-            <button type="submit" name="accept_ZentryGate_cookie">Accept</button>
-        </form>
+    <form method="post" class="zg-cookie-form" aria-labelledby="zg-cookie-title">
         <?php
+
+		wp_nonce_field ('zg_cookie_consent_action', 'zg_cookie_consent_nonce');
+		?>
+        <div class="zg-form-header">
+            <h2 id="zg-cookie-title"><?=esc_html_e ('Asistencia a las jornadas: cookie necesaria', 'zentrygate');?></h2>
+        </div>
+        <div class="zg-form-body">
+            <p><?=esc_html_e ('El sistema de reserva de las jornadas utiliza una cookie necesaria, para mantener la sesión y hacer más fluida la navegación. Por favor, acepta su uso para poder reservar tu asistencia.', 'zentrygate');?></p>
+        </div>
+        <div class="zg-form-footer">
+            <button type="submit" name="accept_ZentryGate_cookie" class="button button-primary">
+                <?=esc_html_e ('Aceptar cookie de reservas', 'zentrygate');?>
+            </button>
+        </div>
+    </form>
+    <?php
 	}
 
 
@@ -187,12 +201,44 @@ class Auth
 	public static function renderLoginForm (): void
 	{
 		?>
-        <form method="post" class="zentrygate-login-form">
-            <label>Email: <input type="email" name="zg_email" required></label><br>
-            <label>Password: <input type="password" name="zg_password" required></label><br>
-            <button type="submit" name="zg_login">Login</button>
-        </form>
-        <?php
+    <form method="post" class="zg-login-form" aria-labelledby="zg-login-title">
+        <?=wp_nonce_field ('zg_login_action', 'zg_login_nonce');?>
+        <div class="zg-form-header">
+            <h2 id="zg-login-title"><?=esc_html_e ('Iniciar sesión', 'zentrygate');?></h2>
+        </div>
+        <div class="zg-form-body">
+            <p><?=esc_html_e ('Introduce tus credenciales para acceder al sistema de reservas.', 'zentrygate');?></p>
+            <label for="zg_email">
+                <?=esc_html_e ('Correo electrónico', 'zentrygate');?>
+                <input
+                    type="email"
+                    id="zg_email"
+                    name="zg_email"
+                    placeholder="<?=esc_attr_e ('ejemplo@correo.com', 'zentrygate');?>"
+                    required
+                    aria-required="true"
+                >
+            </label>
+            <br>
+            <label for="zg_password">
+                <?=esc_html_e ('Contraseña', 'zentrygate');?>
+                <input
+                    type="password"
+                    id="zg_password"
+                    name="zg_password"
+                    placeholder="<?=esc_attr_e ('••••••••••', 'zentrygate');?>"
+                    required
+                    aria-required="true"
+                >
+            </label>
+        </div>
+        <div class="zg-form-footer">
+            <button type="submit" name="zg_login" class="button button-primary">
+                <?=esc_html_e ('Acceder', 'zentrygate');?>
+            </button>
+        </div>
+    </form>
+    <?php
 	}
 
 

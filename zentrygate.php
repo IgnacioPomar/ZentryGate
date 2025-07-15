@@ -24,6 +24,8 @@ require_once ZENTRYGATE_PLUGIN_DIR . 'admin/adminMenu.php';
 require_once ZENTRYGATE_PLUGIN_DIR . 'includes/install.php';
 require_once ZENTRYGATE_PLUGIN_DIR . 'ZentryGate/Plugin.php';
 require_once ZENTRYGATE_PLUGIN_DIR . 'ZentryGate/Auth.php';
+require_once ZENTRYGATE_PLUGIN_DIR . 'ZentryGate/AdministratorPage.php';
+require_once ZENTRYGATE_PLUGIN_DIR . 'ZentryGate/UserPage.php';
 
 // Activation hook
 register_activation_hook (__FILE__, 'zg_activate_plugin');

@@ -55,7 +55,7 @@ class AdministratorPage
 
 	private function renderAdminMenu (): void
 	{
-		$tabs = [ 'dashboard' => __ ('Inicio', 'zentrygate'), 'import' => __ ('Importar usuarios', 'zentrygate'), 'manage_user' => __ ('Gestionar usuarios', 'zentrygate'), 'export_csv' => __ ('Exportar reservas', 'zentrygate')];
+		$tabs = [ 'dashboard' => __ ('Inicio', 'zentrygate'), 'import' => __ ('Importar usuarios', 'zentrygate'), 'add_user' => __ ('Añadir usuario', 'zentrygate'), 'manage_user' => __ ('Gestionar usuarios', 'zentrygate'), 'export_csv' => __ ('Exportar reservas', 'zentrygate')];
 
 		echo '<h2 class="nav-tab-wrapper">';
 		foreach ($tabs as $key => $label)
@@ -179,15 +179,23 @@ class AdministratorPage
 		$table = $wpdb->prefix . 'zgUsers';
 
 		// Deshabilitar usuario
-		if (! empty ($_POST ['zg_do_disable']) && ! empty ($_POST ['zg_disable_email']))
+		if (isset ($_POST ['zg_do_disable']) && ! empty ($_POST ['zg_disable_email']))
 		{
 			$email = sanitize_email (wp_unslash ($_POST ['zg_disable_email']));
 			$wpdb->update ($table, [ 'isEnabled' => 0], [ 'email' => $email], [ '%d'], [ '%s']);
 			echo '<div class="notice notice-success"><p>' . esc_html__ ('Usuario deshabilitado.', 'zentrygate') . '</p></div>';
 		}
 
+		// Habilitar usuario
+		if (isset ($_POST ['zg_do_enable']) && ! empty ($_POST ['zg_disable_email']))
+		{
+			$email = sanitize_email (wp_unslash ($_POST ['zg_disable_email']));
+			$wpdb->update ($table, [ 'isEnabled' => 1], [ 'email' => $email], [ '%d'], [ '%s']);
+			echo '<div class="notice notice-success"><p>' . esc_html__ ('Usuario habilitado.', 'zentrygate') . '</p></div>';
+		}
+
 		// Actualizar contraseña
-		if (! empty ($_POST ['zg_do_update']) && ! empty ($_POST ['zg_update_email']) && ! empty ($_POST ['zg_new_password']))
+		if (isset ($_POST ['zg_do_update']) && ! empty ($_POST ['zg_update_email']) && ! empty ($_POST ['zg_new_password']))
 		{
 			$email = sanitize_email (wp_unslash ($_POST ['zg_update_email']));
 			$password = sanitize_text_field (wp_unslash ($_POST ['zg_new_password']));
@@ -298,9 +306,21 @@ class AdministratorPage
                             <form method="post" style="display:inline">
                                 <?=wp_nonce_field ('zg_manage_user_action', 'zg_manage_user_nonce', true, false)?>
                                 <input type="hidden" name="zg_disable_email" value="<?=esc_attr ($user->email)?>">
-                                <button type="submit" name="zg_do_disable" class="button button-secondary">
-                                    <?=esc_html__ ('Deshabilitar', 'zentrygate')?>
-                                </button>
+                                <?php
+				if ($user->isEnabled)
+				{
+					?>
+                                	<button type="submit" name="zg_do_disable" class="button button-secondary"><?=esc_html__ ('Deshabilitar', 'zentrygate')?></button>
+                                	<?php
+				}
+				else
+				{
+					?>
+                                	<button type="submit" name="zg_do_enable" class="button button-secondary"><?=esc_html__ ('Habilitar', 'zentrygate')?></button>
+                                	<?php
+				}
+				?>
+                                
                             </form>
                             <!-- Modificar -->
                             <?php

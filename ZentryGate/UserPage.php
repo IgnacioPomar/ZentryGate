@@ -4,6 +4,13 @@ namespace ZentryGate;
 
 class UserPage
 {
+	private array $sessionData;
+
+
+	public function __construct (array $sessionData)
+	{
+		$this->sessionData = $sessionData;
+	}
 
 
 	public function render ()

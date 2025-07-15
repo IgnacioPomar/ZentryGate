@@ -19,11 +19,11 @@ class PageRenderer
 
 			if ($session ['isAdmin'])
 			{
-				$pageContentHandler = new AdministratorPage ();
+				$pageContentHandler = new AdministratorPage ($session);
 			}
 			else
 			{
-				$pageContentHandler = new UserPage ();
+				$pageContentHandler = new UserPage ($session);
 			}
 
 			$pageContentHandler->render ();

@@ -18,6 +18,8 @@ function zg_activate_plugin ()
         isEnabled BOOLEAN DEFAULT 1,
         invitationCount INT DEFAULT 0,
         lastLogin DATETIME DEFAULT NULL,
+		resetToken VARCHAR(65) NULL DEFAULT NULL,
+		resetRequestedAt DATETIME NULL DEFAULT NULL,
         PRIMARY KEY (email)
     ) $charsetCollate;";
 

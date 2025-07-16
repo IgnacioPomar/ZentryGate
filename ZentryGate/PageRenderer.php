@@ -30,8 +30,15 @@ class PageRenderer
 		}
 		else
 		{
-			// Render the login form for non-logged-in users
-			Auth::renderLoginForm ();
+
+			if (isset ($_GET ['zg_action']) && 'pass_recovery' === $_GET ['zg_action'])
+			{
+				Auth::renderRecoveryForm ();
+			}
+			else
+			{
+				Auth::renderLoginForm ();
+			}
 		}
 	}
 }

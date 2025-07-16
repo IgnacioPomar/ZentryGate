@@ -92,7 +92,7 @@ class AdministratorPage
         <form method="post" enctype="multipart/form-data">
             <?=wp_nonce_field ('zg_import_action', 'zg_import_nonce', true, false)?>
             <label for="zg_import_file"><?=esc_html__ ('Archivo .txt/.csv (email,nombre,pass):', 'zentrygate')?></label><br>
-            <input type="file" id="zg_import_file" name="zg_import_file" accept=".txt,.csv" required>
+            <input type="file" id="zg_import_file" name="zg_import_file"  onclick="this.value = null;" accept=".txt,.csv" required>
             <p><button type="submit" name="zg_do_import" class="button button-primary"><?=esc_html__ ('Importar ahora', 'zentrygate')?></button></p>
         </form>
         </div>
@@ -125,7 +125,16 @@ class AdministratorPage
 		$imported = 0;
 		$duplicates = [ ];
 
-		while (($data = fgetcsv ($file, 1000, ',')) !== false)
+		// --- Detect delimiter ---
+		$firstLine = fgets ($file);
+		rewind ($file);
+
+		$commaCount = substr_count ($firstLine, ',');
+		$semicolonCount = substr_count ($firstLine, ';');
+		$delimiter = $semicolonCount > $commaCount ? ';' : ',';
+
+		// --- Read loo0p ---
+		while (($data = fgetcsv ($file, 1000, $delimiter)) !== false)
 		{
 			if (count ($data) < 3)
 			{
@@ -136,14 +145,26 @@ class AdministratorPage
 			{
 				continue;
 			}
+
+			// Comprobar si el usuario ya existe
+			$existing = $wpdb->get_var ($wpdb->prepare ("SELECT COUNT(*) FROM {$table} WHERE email = %s", $email));
+			if ($existing > 0)
+			{
+				$duplicates [] = $email;
+				continue; // Saltar a la siguiente línea si ya existe
+			}
+
 			$hash = wp_hash_password ($pass);
 			$result = $wpdb->insert ($table, [ 'email' => $email, 'name' => $name, 'passwordHash' => $hash, 'isAdmin' => 0, 'isEnabled' => 1, 'invitationCount' => 0, 'lastLogin' => null], [ '%s', '%s', '%s', '%d', '%d', '%d', '%s']);
 			if ($result === false)
 			{
-				$duplicates [] = $email;
+				echo '<div class="notice notice-error"><p>' . esc_html ("Error al insertar {$email}: {$wpdb->last_error}") . '</p></div>';
+				error_log ("WPDB ERROR: {$wpdb->last_error}");
+				error_log ("LAST QUERY: {$wpdb->last_query}");
 			}
 			else
 			{
+
 				$imported ++;
 			}
 		}

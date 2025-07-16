@@ -28,16 +28,14 @@ class AdministratorPage
 		switch ($this->action)
 		{
 			case 'import':
-				$this->processImport ();
-				$this->renderImportForm ();
+				if (! $this->processImport ()) $this->renderImportForm ();
 				break;
 			case 'manage_user':
 				$this->processManageUser ();
 				$this->renderManageUser ();
 				break;
 			case 'add_user':
-				$this->processAddUser ();
-				$this->renderAddUser ();
+				if (! $this->processAddUser ()) $this->renderAddUser ();
 				break;
 			case 'export_csv':
 				// $this->processExportCSV ();
@@ -100,24 +98,24 @@ class AdministratorPage
 	}
 
 
-	private function processImport (): void
+	private function processImport (): bool
 	{
 		if (! isset ($_POST ['zg_do_import']) || ! check_admin_referer ('zg_import_action', 'zg_import_nonce'))
 		{
-			return;
+			return false;
 		}
 
 		if (empty ($_FILES ['zg_import_file']) || $_FILES ['zg_import_file'] ['error'] !== UPLOAD_ERR_OK)
 		{
 			echo '<div class="notice notice-error"><p>' . esc_html__ ('Error al subir el archivo.', 'zentrygate') . '</p></div>';
-			return;
+			return false;
 		}
 
 		$file = fopen ($_FILES ['zg_import_file'] ['tmp_name'], 'r');
 		if (! $file)
 		{
 			echo '<div class="notice notice-error"><p>' . esc_html__ ('No se pudo abrir el archivo.', 'zentrygate') . '</p></div>';
-			return;
+			return false;
 		}
 
 		global $wpdb;
@@ -178,6 +176,109 @@ class AdministratorPage
 		{
 			echo '<div class="notice notice-warning"><p>' . esc_html (__ ('Usuarios duplicados (no importados): ', 'zentrygate')) . esc_html (implode (', ', $duplicates)) . '</p></div>';
 		}
+
+		return true;
+	}
+
+
+	/**
+	 * Render the "Add User" form in the admin page.
+	 */
+	private function renderAddUser (): void
+	{
+		?>
+    <div class="wrap">
+        <h1><?=esc_html_e ('Añadir nuevo usuario', 'zentrygate');?></h1>
+        <form method="post" action="">
+            <?=wp_nonce_field ('zg_add_user_action', 'zg_add_user_nonce');?>
+            <table class="form-table">
+                <tr>
+                    <th><label for="zg_adduser_email"><?=esc_html_e ('Email', 'zentrygate');?></label></th>
+                    <td><input name="zg_adduser_email" type="email" id="zg_email" class="regular-text" required></td>
+                </tr>
+                <tr>
+                    <th><label for="zg_adduser_name"><?=esc_html_e ('Nombre', 'zentrygate');?></label></th>
+                    <td><input name="zg_adduser_name" type="text" id="zg_name" class="regular-text" required></td>
+                </tr>
+                <tr>
+                    <th><label for="zg_adduser_password"><?=esc_html_e ('Contraseña', 'zentrygate');?></label></th>
+                    <td><input name="zg_adduser_password" type="password" id="zg_password" class="regular-text" required></td>
+                </tr>
+            </table>
+            <p><button type="submit" name="zg_do_add_user" class="button button-primary"><?=esc_html__ ('Crear usuario', 'zentrygate')?></button></p>
+        </form>
+    </div>
+    <?php
+	}
+
+
+	/**
+	 * Process the "Add User" form submission.
+	 */
+	private function processAddUser (): bool
+	{
+		if (! isset ($_POST ['zg_do_add_user']) || ! check_admin_referer ('zg_add_user_action', 'zg_add_user_nonce'))
+		{
+			return false;
+		}
+
+		// Sanitize and validate inputs
+		$email = isset ($_POST ['zg_adduser_email']) ? sanitize_email ($_POST ['zg_adduser_email']) : '';
+		$name = isset ($_POST ['zg_adduser_name']) ? sanitize_text_field ($_POST ['zg_adduser_name']) : '';
+		$password = isset ($_POST ['zg_adduser_password']) ? $_POST ['zg_adduser_password'] : '';
+
+		if (empty ($email) || ! is_email ($email))
+		{
+
+			echo '<div class="notice notice-error"><p>' . esc_html__ ('Por favor, introduce un email válido.', 'zentrygate') . '</p></div>';
+
+			return false;
+		}
+
+		if (empty ($name))
+		{
+
+			echo '<div class="notice notice-error"><p>' . esc_html__ ('El nombre no puede estar vacío.', 'zentrygate') . '</p></div>';
+
+			return false;
+		}
+
+		if (empty ($password))
+		{
+
+			echo '<div class="notice notice-error"><p>' . esc_html__ ('La contraseña no puede estar vacía.', 'zentrygate') . '</p></div>';
+
+			return false;
+		}
+
+		global $wpdb;
+		$table = $wpdb->prefix . 'zgUsers';
+
+		// Check for duplicate email
+		$exists = (int) $wpdb->get_var ($wpdb->prepare ("SELECT COUNT(*) FROM {$table} WHERE email = %s", $email));
+		if ($exists)
+		{
+
+			echo '<div class="notice notice-warning"><p>' . esc_html (sprintf (__ ('El usuario %s ya existe.', 'zentrygate'), esc_html ($email))) . '</p></div>';
+
+			return true;
+		}
+
+		// Hash the password and insert (always enabled, never admin)
+		$hash = wp_hash_password ($password);
+		$result = $wpdb->insert ($table, [ 'email' => $email, 'name' => $name, 'passwordHash' => $hash, 'isAdmin' => 0, 'isEnabled' => 1, 'invitationCount' => 0, 'lastLogin' => null], [ '%s', '%s', '%s', '%d', '%d', '%d', '%s']);
+
+		if ($result === false)
+		{
+
+			echo '<div class="notice notice-error"><p>' . esc_html (sprintf (__ ('Error al añadir el usuario: %s', 'zentrygate'), $wpdb->last_error)) . '</p></div>';
+		}
+		else
+		{
+
+			echo '<div class="notice notice-success"><p>' . esc_html (sprintf (__ ('Usuario %s añadido correctamente.', 'zentrygate'), esc_html ($email))) . '</p></div>';
+		}
+		return true;
 	}
 
 

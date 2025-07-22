@@ -82,6 +82,7 @@ class Auth
 		}
 		else
 		{
+			$cookieDta = &self::$cookieData;
 			if (isset ($_POST ['zg_email'], $_POST ['zg_password']))
 			{
 				if (self::checkLoginForm ())
@@ -90,7 +91,6 @@ class Auth
 					$nonce = bin2hex (random_bytes (16));
 					$fileId = bin2hex (random_bytes (16));
 
-					$cookieDta = &self::$cookieData;
 					$cookieDta ['sessId'] = $fileId;
 					$cookieDta ['nonce'] = $nonce;
 					$cookieDta ['emailHash'] = md5 (trim ($_POST ['zg_email']));
@@ -110,7 +110,7 @@ class Auth
 					self::saveCookieData ();
 				}
 			}
-			else
+			else if (isset ($cookieDta ['sessId']))
 			{
 				// Coockie exists, and no post request for login: check session file
 				$cookieDta = &self::$cookieData;
@@ -135,6 +135,10 @@ class Auth
 				{
 					// There is no session file... it may be expired, or a hacking attempt: There is no valid login, without information
 				}
+			}
+			else
+			{
+				// The cookie was accepted, but there is no POST request for login, nor we have a valid session id to check.
 			}
 		}
 	}
@@ -344,14 +348,14 @@ class Auth
         <div class="zg-form-header">
             <h2 id="zg-change-title"><?php
 
-esc_html_e ('Establecer nueva contraseña', 'zentrygate');
+		esc_html_e ('Establecer nueva contraseña', 'zentrygate');
 		?></h2>
         </div>
         <div class="zg-form-body">
             <label for="zg_new_password">
                 <?php
 
-esc_html_e ('Nueva contraseña', 'zentrygate');
+		esc_html_e ('Nueva contraseña', 'zentrygate');
 		?>
                 <input
                     type="password"
@@ -359,7 +363,7 @@ esc_html_e ('Nueva contraseña', 'zentrygate');
                     name="zg_new_password"
                     placeholder="<?php
 
-esc_attr_e ('••••••••••', 'zentrygate');
+		esc_attr_e ('••••••••••', 'zentrygate');
 		?>"
                     required
                     aria-required="true"
@@ -369,7 +373,7 @@ esc_attr_e ('••••••••••', 'zentrygate');
             <label for="zg_confirm_password">
                 <?php
 
-esc_html_e ('Repite la contraseña', 'zentrygate');
+		esc_html_e ('Repite la contraseña', 'zentrygate');
 		?>
                 <input
                     type="password"
@@ -377,7 +381,7 @@ esc_html_e ('Repite la contraseña', 'zentrygate');
                     name="zg_confirm_password"
                     placeholder="<?php
 
-esc_attr_e ('••••••••••', 'zentrygate');
+		esc_attr_e ('••••••••••', 'zentrygate');
 		?>"
                     required
                     aria-required="true"
@@ -392,7 +396,7 @@ esc_attr_e ('••••••••••', 'zentrygate');
             >
                 <?php
 
-esc_html_e ('Cambiar contraseña', 'zentrygate');
+		esc_html_e ('Cambiar contraseña', 'zentrygate');
 		?>
             </button>
         </div>

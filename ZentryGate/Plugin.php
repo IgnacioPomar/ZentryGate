@@ -14,10 +14,17 @@ class Plugin
 	public function __construct ()
 	{
 		add_filter ('theme_page_templates', [ $this, 'add_page_template']);
-		add_filter ('template_include', [ $this, 'load_page_template']);
+		// add_filter ('template_include', [ $this, 'load_page_template']);
+		add_filter ('page_template', [ $this, 'override_page_template'], 10, 2);
 
 		// Work with cookies and sessions
 		add_action ('init', [ Auth::class, 'init']);
+
+		// add plugin style
+		if (! wp_style_is ('zentrygate-styles', 'enqueued'))
+		{
+			wp_enqueue_style ('zentrygate-styles', plugin_dir_url (__FILE__) . '../rsc/zentrygate.css', [ ], '1.0');
+		}
 	}
 
 
@@ -36,11 +43,6 @@ class Plugin
 			$slug = get_page_template_slug ($post->ID);
 			if ('template-zentrygate.php' === $slug)
 			{
-
-				if (! wp_style_is ('zentrygate-styles', 'enqueued'))
-				{
-					wp_enqueue_style ('zentrygate-styles', plugin_dir_url (__FILE__) . '../rsc/zentrygate.css', [ ], '1.0');
-				}
 
 				$file = ZENTRYGATE_PLUGIN_DIR . 'templates/template-zentrygate.php';
 				if (file_exists ($file))

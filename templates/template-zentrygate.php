@@ -12,7 +12,7 @@ use ZentryGate\PageRenderer;
 
 get_header ();
 
-echo '<main id="main" class="site-main">';
+echo '<div id="ZentryGate-main" class="container">';
 if (have_posts ())
 {
 	while (have_posts ())
@@ -20,11 +20,11 @@ if (have_posts ())
 		the_post ();
 		the_content ();
 	}
-
-	$renderer = new PageRenderer ();
-	$renderer->renderPluginPageContents ();
 }
-echo '</main>';
+$renderer = new PageRenderer ();
+$renderer->renderPluginPageContents ();
+
+echo '</div>';
 
 get_footer ();
 

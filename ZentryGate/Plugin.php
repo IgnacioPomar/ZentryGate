@@ -14,8 +14,7 @@ class Plugin
 	public function __construct ()
 	{
 		add_filter ('theme_page_templates', [ $this, 'add_page_template']);
-		// add_filter ('template_include', [ $this, 'load_page_template']);
-		add_filter ('page_template', [ $this, 'override_page_template'], 10, 2);
+		add_filter ('template_include', [ $this, 'load_page_template']);
 
 		// Work with cookies and sessions
 		add_action ('init', [ Auth::class, 'init']);

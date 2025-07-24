@@ -7,6 +7,7 @@ function zg_admin_menu ()
 
 	add_submenu_page ('zentrygate', 'Usuarios Admin', 'Usuarios', 'manage_options', 'zentrygate_users', 'zg_render_users_page');
 	add_submenu_page ('zentrygate', 'Gestión de Eventos', 'Eventos', 'manage_options', 'zentrygate_events', 'zg_render_events_page');
+	add_submenu_page ('zentrygate', 'Textos Formularios', 'Textos Formularios', 'manage_options', 'zentrygate_form_texts', 'zg_render_form_texts_page');
 }
 add_action ('admin_menu', 'zg_admin_menu');
 

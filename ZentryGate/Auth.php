@@ -182,13 +182,16 @@ class Auth
         <?php
 
 		wp_nonce_field ('zg_cookie_consent_action', 'zg_cookie_consent_nonce');
-		?>
-        <div class="zg-form-header">
-            <h2 id="zg-cookie-title"><?=esc_html_e ('Asistencia a las jornadas: cookie necesaria', 'zentrygate');?></h2>
-        </div>
-        <div class="zg-form-body">
-            <p><?=esc_html_e ('El sistema de reserva de las jornadas utiliza una cookie necesaria, para mantener la sesión y hacer más fluida la navegación. Por favor, acepta su uso para poder reservar tu asistencia.', 'zentrygate');?></p>
-        </div>
+		$page_id = intval (get_option ('zg_cookie_prompt_page'));
+		if ($page_id)
+		{
+			echo apply_filters ('the_content', get_post_field ('post_content', $page_id));
+		}
+		else
+		{
+			echo '<p>' . esc_html_e ('Por favor, acepta el uso de cookies para poder reservar tu asistencia a las jornadas.', 'zentrygate') . '</p>';
+		}
+		?>        
         <div class="zg-form-footer">
             <button type="submit" name="accept_ZentryGate_cookie" class="button button-primary">
                 <?=esc_html_e ('Aceptar cookie de reservas', 'zentrygate');?>
@@ -207,11 +210,20 @@ class Auth
 		?>
     <form method="post" class="zg-login-form" aria-labelledby="zg-login-title">
         <?=wp_nonce_field ('zg_login_action', 'zg_login_nonce');?>
-        <div class="zg-form-header">
-            <h2 id="zg-login-title"><?=esc_html_e ('Iniciar sesión', 'zentrygate');?></h2>
-        </div>
+        <?php
+		$page_id = intval (get_option ('zg_login_form_page'));
+		if ($page_id)
+		{
+			echo apply_filters ('the_content', get_post_field ('post_content', $page_id));
+		}
+		else
+		{
+			echo '<p>' . esc_html_e ('Por favor, inicia sesión para acceder al sistema de reservas.', 'zentrygate') . '</p>';
+		}
+		?>
+        
+        
         <div class="zg-form-body">
-            <p><?=esc_html_e ('Introduce tus credenciales para acceder al sistema de reservas.', 'zentrygate');?></p>
             <label for="zg_email">
                 <?=esc_html_e ('Correo electrónico', 'zentrygate');?>
                 <input
@@ -460,10 +472,18 @@ class Auth
 		?></h2>
         </div>
         <div class="zg-form-body">
-            <p><?php
+            <?php
+		$page_id = intval (get_option ('zg_recovery_form_page'));
+		if ($page_id)
+		{
+			echo apply_filters ('the_content', get_post_field ('post_content', $page_id));
+		}
+		else
+		{
 
-		esc_html_e ('Introduce tu correo electrónico para recibir un enlace de recuperación.', 'zentrygate');
-		?></p>
+			esc_html_e ('Introduce tu correo electrónico para recibir un enlace de recuperación.', 'zentrygate');
+		}
+		?>
             <label for="zg_recover_email">
                 <?php
 

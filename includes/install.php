@@ -37,7 +37,7 @@ function zg_activate_plugin ()
         userEmail VARCHAR(255) NOT NULL,
         eventId BIGINT UNSIGNED NOT NULL,
         sectionId VARCHAR(255) NOT NULL,
-        status ENUM('confirmed','waiting_list') NOT NULL,
+        status ENUM('confirmed','unpaid','waiting_list') NOT NULL,
         createdAt DATETIME NOT NULL,
         PRIMARY KEY (id),
         KEY idxUser (userEmail),

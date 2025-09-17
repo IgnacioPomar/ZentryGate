@@ -183,9 +183,11 @@ class Auth
 
 		wp_nonce_field ('zg_cookie_consent_action', 'zg_cookie_consent_nonce');
 		$page_id = intval (get_option ('zg_cookie_prompt_page'));
+		$buttonText = "Continuar";
 		if ($page_id)
 		{
 			echo apply_filters ('the_content', get_post_field ('post_content', $page_id));
+			$buttonText = get_the_title ($page_id);
 		}
 		else
 		{
@@ -194,7 +196,7 @@ class Auth
 		?>        
         <div class="zg-form-footer">
             <button type="submit" name="accept_ZentryGate_cookie" class="button button-primary">
-                <?=esc_html_e ('Aceptar cookie de reservas', 'zentrygate');?>
+                <?=$buttonText?>
             </button>
         </div>
     </form>

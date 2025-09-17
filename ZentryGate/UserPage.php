@@ -99,10 +99,7 @@ class UserPage
 		// 3.2.1) Gestionar POST (único punto que añade mensajes)
 		$this->handlePost ();
 
-		// ¿Está el usuario suscrito a algo?
-		$hasAnySubscription = ! empty ($this->userSubscriptions);
-
-		if ($hasAnySubscription)
+		if (! empty ($this->userSubscriptions)) // El usuario tiene alguna subscripción
 		{
 			// 3.2.2) Primero páginas por reglas…
 			$this->renderPagesByRules ();

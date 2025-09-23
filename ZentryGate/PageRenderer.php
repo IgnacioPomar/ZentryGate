@@ -43,7 +43,6 @@ class PageRenderer
 
 	public function renderPluginPageContents ()
 	{
-		if (isset ($_GET ['DEBUG'])) echo "<!-- DEBUG MODE ENABLED -->\n";
 		if (! Auth::isCookieAccepted ())
 		{
 			Auth::renderCookiePrompt ();
@@ -53,27 +52,77 @@ class PageRenderer
 			$session = Auth::getSessionData ();
 			$pageContentHandler = null;
 
-			if ($session ['isAdmin'])
-			{
-				$pageContentHandler = new AdministratorPage ($session);
-			}
-			else
-			{
-				$pageContentHandler = new UserPage ($session);
-			}
+			$pageContentHandler = $session ['isAdmin'] ? new AdministratorPage ($session) : new UserPage ($session);
 
 			$pageContentHandler->render ();
 		}
 		else
 		{
+			$action = $_GET ['zg_action'] ?? 'login';
+			// Remember: the login actions were handled in Auth::processEarlyActions
+			// (because they set coockies, and so, they need to be processed before headers are sent)
 
-			if (isset ($_GET ['zg_action']) && 'pass_recovery' === $_GET ['zg_action'])
+			switch ($action)
 			{
-				Auth::renderRecoveryForm ();
-			}
-			else
-			{
-				Auth::renderLoginForm ();
+				case 'login':
+				default:
+					Auth::renderLoginForm ();
+					break;
+				case 'register':
+					if ($_SERVER ['REQUEST_METHOD'] === 'POST' && isset ($_POST ['zg_register_submit']))
+					{
+						// Debe: validar nonce, email único, password policy, captchas si aplican, consentimiento
+						if (Auth::handleRegisterPost ())
+						{
+							Auth::renderVerifyEMailForm ();
+							break;
+						}
+					}
+					Auth::renderRegisterForm (); // email, nombre, password, aceptar T&C/cookies
+					break;
+				case 'verify':
+					$token = $_GET ['token'] ?? '';
+					if (Auth::handleEmailVerification ($token))
+					{
+						Auth::renderVerificationSuccess ();
+					}
+					else
+					{
+						Auth::renderVerificationFailed ();
+					}
+					break;
+				case 'pass_recovery':
+					if ($_SERVER ['REQUEST_METHOD'] === 'POST' && isset ($_POST ['zg_recovery_submit']))
+					{
+						// Genera resetToken + resetRequestedAt y envía email con enlace
+						// (mensaje SIEMPRE neutral: “si tu email existe, recibirás instrucciones”)
+						Auth::handleRecoveryPost ();
+						Auth::renderRecoveryRequested (); // siempre éxito neutral
+						break;
+					}
+					Auth::renderRecoveryForm (); // sólo un campo email + nonce
+					break;
+
+				// --- FORMULARIO DE RESET (desde enlace del email con token) ---
+				case 'reset':
+					$token = $_GET ['token'] ?? '';
+					if (! Auth::isValidResetToken ($token))
+					{
+						Auth::renderInvalidOrExpiredToken ();
+						break;
+					}
+
+					if ($_SERVER ['REQUEST_METHOD'] === 'POST' && isset ($_POST ['zg_reset_submit']))
+					{
+						if (Auth::handlePasswordResetPost ($token))
+						{
+							// Tras reset, puedes logarle automáticamente o llevarle a login
+							Auth::renderPasswordResetSuccess ();
+							break;
+						}
+					}
+					Auth::renderPasswordResetForm ($token); // password + confirm + nonce
+					break;
 			}
 		}
 	}

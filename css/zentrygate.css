@@ -83,12 +83,12 @@
 
 
 /* Enlace de recuperación de contraseña */
-.zg-login-form .zg-pass-recovery {
+.zg-login-form .zg-auth-links {
     margin-top: 0.75rem;
     font-size: 0.875rem;
 }
 
-.zg-login-form .zg-pass-recovery a {
+.zg-login-form .zg-auth-links a {
     color: #0073aa;
     text-decoration: none;
 }

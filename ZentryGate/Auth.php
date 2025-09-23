@@ -254,11 +254,15 @@ class Auth
             <button type="submit" name="zg_login" class="button button-primary">
                 <?=esc_html_e ('Acceder', 'zentrygate');?>
             </button>
-            <p class="zg-pass-recovery">
-                    <a href="<?=esc_url (add_query_arg ('zg_action', 'pass_recovery'));?>">
-                        <?=esc_html_e ('¿Has olvidado tu contraseña?', 'zentrygate');?>
-                    </a>
-                </p>
+            <p class="zg-auth-links">
+                <a class="zg-pass-recovery" href="<?=esc_url (add_query_arg ('zg_action', 'pass_recovery'));?>">
+                    <?=esc_html_e ('¿Has olvidado tu contraseña?', 'zentrygate');?>
+                </a>
+                &nbsp;·&nbsp;
+                <a class="zg-register" href="<?=esc_url (add_query_arg ('zg_action', 'register'));?>">
+                    <?=esc_html_e ('¿No tienes cuenta? Regístrate', 'zentrygate');?>
+                </a>
+            </p>
         </div>
     </form>
     <?php

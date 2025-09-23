@@ -22,6 +22,7 @@ if (! defined ('ZENTRYGATE_DIR'))
 
 require_once ZENTRYGATE_DIR . 'ZentryGate/WpAdminPanel.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/AdminPanel/Dashboard.php';
+require_once ZENTRYGATE_DIR . 'ZentryGate/AdminPanel/Texts.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/Install.php';
 
 require_once ZENTRYGATE_DIR . 'ZentryGate/Plugin.php';

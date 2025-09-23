@@ -18,7 +18,7 @@ class Plugin
 
 		// Admin menu and settings
 		add_action ('admin_menu', [ WpAdminPanel::class, 'registerMenus']);
-		add_action ('admin_init', [ WpAdminPanel::class, 'registerFormTextsSettings']);
+		add_action ('admin_init', [ \ZentryGate\AdminPanel\Texts::class, 'registerFormTextsSettings']);
 		add_action ('admin_post_zg_edit_user', [ WpAdminPanel::class, 'processEditUser']);
 
 		// add plugin style

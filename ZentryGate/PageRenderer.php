@@ -13,15 +13,24 @@ class PageRenderer
 			$title = 'ZentryGate';
 		}
 
-		echo '<!DOCTYPE html>';
-		echo '<html lang="es">';
-		echo '<head>';
-		echo '<meta charset="UTF-8">';
-		echo '<meta name="viewport" content="width=device-width, initial-scale=1.0">';
-		echo '<title>' . esc_html ($title) . '</title>';
-		echo '<link rel="stylesheet" href="' . esc_url (plugin_dir_url (__FILE__) . '../rsc/zentrygate.css') . '">';
-		echo '</head>';
-		echo '<body class="zentrygate-plugin-page">';
+		echo '<!DOCTYPE html>' . PHP_EOL;
+		echo '<html lang="es">' . PHP_EOL;
+		echo '<head>' . PHP_EOL;
+		echo '<meta charset="UTF-8">' . PHP_EOL;
+		echo '<meta name="viewport" content="width=device-width, initial-scale=1.0">' . PHP_EOL;
+		echo '<title>' . esc_html ($title) . '</title>' . PHP_EOL;
+
+		// Asegura que los enqueues se hayan ejecutado
+		do_action ('wp_enqueue_scripts');
+
+		// Solo CSS encolados
+		wp_print_styles ();
+
+		// Solo JS destinados al <head>
+		wp_print_head_scripts ();
+
+		echo '</head>' . PHP_EOL;
+		echo '<body class="zentrygate-plugin-page">' . PHP_EOL;
 	}
 
 
@@ -34,6 +43,7 @@ class PageRenderer
 
 	public function renderPluginPageContents ()
 	{
+		if (isset ($_GET ['DEBUG'])) echo "<!-- DEBUG MODE ENABLED -->\n";
 		if (! Auth::isCookieAccepted ())
 		{
 			Auth::renderCookiePrompt ();

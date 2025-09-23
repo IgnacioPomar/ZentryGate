@@ -3,7 +3,7 @@
 
 function zg_activate_plugin ()
 {
-	global $wpdb, $zentrygateDbVersion;
+	global $wpdb;
 
 	$charsetCollate = $wpdb->get_charset_collate ();
 	$prefix = $wpdb->prefix;
@@ -57,5 +57,5 @@ function zg_activate_plugin ()
 	dbDelta ($sqlReservations);
 	dbDelta ($sqlCapacity);
 
-	add_option ('zgDbVersion', $zentrygateDbVersion);
+	add_option ('zgDbVersion', ZENTRYGATE_VERSION_DB);
 }

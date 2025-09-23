@@ -11,7 +11,7 @@ function zg_get_all_events ()
 
 function zg_render_dashboard_page ()
 {
-	global $wpdb, $zentrygatePluginVersion;
+	global $wpdb;
 	$usersTable = $wpdb->prefix . 'zgUsers';
 	$eventsTable = $wpdb->prefix . 'zgEvents';
 	$reservationsTable = $wpdb->prefix . 'zgReservations';
@@ -60,7 +60,7 @@ function zg_render_dashboard_page ()
 
     <div class="wrap">
         <h1>ZentryGate</h1>
-        <p><strong>Versión:</strong> <?=esc_html ($zentrygatePluginVersion)?></p>
+        <p><strong>Versión:</strong> <?=esc_html (ZENTRYGATE_VERSION_PLUGIN)?></p>
         <p>Este plugin permite gestionar reservas para eventos con control de aforo, secciones, reglas condicionales y validación de usuarios registrados.</p>
 
         <form method="post" style="margin-top: 20px;">

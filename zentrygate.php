@@ -21,7 +21,9 @@ if (! defined ('ZENTRYGATE_DIR'))
 }
 
 require_once ZENTRYGATE_DIR . 'ZentryGate/WpAdminPanel.php';
+require_once ZENTRYGATE_DIR . 'ZentryGate/AdminPanel/Dashboard.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/Install.php';
+
 require_once ZENTRYGATE_DIR . 'ZentryGate/Plugin.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/Auth.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/AdministratorPage.php';

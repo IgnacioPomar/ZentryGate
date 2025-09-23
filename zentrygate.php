@@ -20,7 +20,7 @@ if (! defined ('ZENTRYGATE_DIR'))
 	define ('ZENTRYGATE_URL', plugin_dir_url (__FILE__));
 }
 
-require_once ZENTRYGATE_DIR . 'admin/adminMenu.php';
+require_once ZENTRYGATE_DIR . 'ZentryGate/WpAdminPanel.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/Install.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/Plugin.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/Auth.php';

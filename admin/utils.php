@@ -1,6 +1,6 @@
 <?php
 
-
+/*
 function zg_get_all_events ()
 {
 	global $wpdb;
@@ -115,4 +115,4 @@ function zg_render_form_texts_page ()
     <?php
 }
 
-
+*/

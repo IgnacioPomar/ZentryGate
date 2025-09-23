@@ -16,6 +16,10 @@ class Plugin
 		// Work with cookies and sessions
 		add_action ('init', [ Auth::class, 'init']);
 
+		// Admin menu and settings
+		add_action ('admin_menu', [ WpAdminPanel::class, 'registerMenus']);
+		add_action ('admin_init', [ WpAdminPanel::class, 'registerFormTextsSettings']);
+
 		// add plugin style
 		if (! wp_style_is ('zentrygate-styles', 'enqueued'))
 		{

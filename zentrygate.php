@@ -21,14 +21,14 @@ if (! defined ('ZENTRYGATE_DIR'))
 }
 
 require_once ZENTRYGATE_DIR . 'admin/adminMenu.php';
-require_once ZENTRYGATE_DIR . 'includes/install.php';
+require_once ZENTRYGATE_DIR . 'ZentryGate/install.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/Plugin.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/Auth.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/AdministratorPage.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/UserPage.php';
 
 // Activation hook
-register_activation_hook (__FILE__, 'zg_activate_plugin');
+register_activation_hook (__FILE__, [ \ZentryGate\Install::class, 'activate']);
 
 use ZentryGate\Plugin;
 

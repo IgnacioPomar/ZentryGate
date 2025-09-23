@@ -19,7 +19,7 @@ class Plugin
 		// add plugin style
 		if (! wp_style_is ('zentrygate-styles', 'enqueued'))
 		{
-			wp_enqueue_style ('zentrygate-styles', plugin_dir_url (__FILE__) . '../rsc/zentrygate.css', [ ], ZENTRYGATE_VERSION_PLUGIN);
+			wp_enqueue_style ('zentrygate-styles', plugin_dir_url (__FILE__) . '../css/zentrygate.css', [ ], ZENTRYGATE_VERSION_PLUGIN);
 		}
 	}
 }

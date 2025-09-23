@@ -14,17 +14,18 @@ defined ('ABSPATH') || exit ();
 define ('ZENTRYGATE_VERSION_DB', '1.0.1');
 define ('ZENTRYGATE_VERSION_PLUGIN', '1.0.1');
 
-if (! defined ('ZENTRYGATE_PLUGIN_DIR'))
+if (! defined ('ZENTRYGATE_DIR'))
 {
-	define ('ZENTRYGATE_PLUGIN_DIR', plugin_dir_path (__FILE__));
+	define ('ZENTRYGATE_DIR', plugin_dir_path (__FILE__));
+	define ('ZENTRYGATE_URL', plugin_dir_url (__FILE__));
 }
 
-require_once ZENTRYGATE_PLUGIN_DIR . 'admin/adminMenu.php';
-require_once ZENTRYGATE_PLUGIN_DIR . 'includes/install.php';
-require_once ZENTRYGATE_PLUGIN_DIR . 'ZentryGate/Plugin.php';
-require_once ZENTRYGATE_PLUGIN_DIR . 'ZentryGate/Auth.php';
-require_once ZENTRYGATE_PLUGIN_DIR . 'ZentryGate/AdministratorPage.php';
-require_once ZENTRYGATE_PLUGIN_DIR . 'ZentryGate/UserPage.php';
+require_once ZENTRYGATE_DIR . 'admin/adminMenu.php';
+require_once ZENTRYGATE_DIR . 'includes/install.php';
+require_once ZENTRYGATE_DIR . 'ZentryGate/Plugin.php';
+require_once ZENTRYGATE_DIR . 'ZentryGate/Auth.php';
+require_once ZENTRYGATE_DIR . 'ZentryGate/AdministratorPage.php';
+require_once ZENTRYGATE_DIR . 'ZentryGate/UserPage.php';
 
 // Activation hook
 register_activation_hook (__FILE__, 'zg_activate_plugin');

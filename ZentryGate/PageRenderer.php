@@ -109,23 +109,28 @@ class PageRenderer
 
 				// --- FORMULARIO DE RESET (desde enlace del email con token) ---
 				case 'pass-reset':
-					$token = $_GET ['token'] ?? '';
-					if (! Auth::isValidResetToken ($token))
+					if ($notice === 'errors')
 					{
-						Auth::renderInvalidOrExpiredToken ();
-						break;
-					}
+						// El usuario ha tratado de cambiar las password pero ha dado problemas
+						// En este caso... ¿como podría ocurrir? ¿contraseñas distintas o que no cumplan con la política?
 
-					if ($_SERVER ['REQUEST_METHOD'] === 'POST' && isset ($_POST ['zg_reset_submit']))
-					{
-						if (Auth::handlePasswordResetPost ($token))
-						{
-							// Tras reset, puedes logarle automáticamente o llevarle a login
-							Auth::renderPasswordResetSuccess ();
-							break;
-						}
+						Auth::renderRecoveryAskEmailForm ();
 					}
-					Auth::renderPasswordResetForm ($token); // password + confirm + nonce
+					else if ($notice === 'success')
+					{
+						// El usuario ha hecho el post de envio de contraseña. Mensaje de exito y damos enlace a login
+						Auth::renderPasswordResetSuccess ();
+					}
+					else if (Auth::isValidResetToken ())
+					{
+						// Entrada desde email con token válido: mostramos el formulario de cambio password
+						Auth::renderPasswordResetForm ();
+					}
+					else
+					{
+						// Token inválido o expirado
+						Auth::renderPassResetFailed ();
+					}
 					break;
 			}
 		}

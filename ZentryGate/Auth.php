@@ -436,7 +436,7 @@ class Auth
 		global $wpdb;
 		$user = $wpdb->get_row ($wpdb->prepare ("SELECT * FROM {$wpdb->prefix}zgUsers WHERE email = %s", $email), ARRAY_A);
 
-		if (! $user || ! self::isResetTokenValid ($user ['resetRequestedAt'], self::RESET_TOKEN_MAX_MINUTES * MINUTE_IN_SECONDS) || $user ['resetToken'] !== $token)
+		if (! $user || ! self::isStillValidToken ($user ['resetRequestedAt'], self::RESET_TOKEN_MAX_MINUTES * MINUTE_IN_SECONDS) || $user ['resetToken'] !== $token)
 		{
 			return false;
 		}
@@ -675,7 +675,7 @@ class Auth
 	 *        	Intervalo de validez en segundos.
 	 * @return bool True si el token aún no ha expirado.
 	 */
-	private static function isResetTokenValid (?string $resetRequestedAt, int $intervalSec): bool
+	private static function isStillValidToken (?string $resetRequestedAt, int $intervalSec): bool
 	{
 		if (empty ($resetRequestedAt))
 		{
@@ -683,6 +683,30 @@ class Auth
 		}
 		$requested = strtotime ($resetRequestedAt);
 		return (time () - $requested) < $intervalSec;
+	}
+
+
+	public static function isValidResetToken (): bool
+	{
+		if (! isset ($_GET ['zg_recover_email'], $_GET ['token']))
+		{
+			return false;
+		}
+
+		$email = sanitize_email (wp_unslash ($_GET ['zg_recover_email']));
+		$token = sanitize_text_field (wp_unslash ($_GET ['token']));
+
+		global $wpdb;
+		$user = $wpdb->get_row ($wpdb->prepare ("SELECT email, isEnabled, resetToken, resetRequestedAt
+               FROM {$wpdb->prefix}zgUsers
+              WHERE email = %s", $email), ARRAY_A);
+
+		if (! $user || ! (bool) $user ['isEnabled'] || ! self::isStillValidToken ($user ['resetRequestedAt'], self::RESET_TOKEN_MAX_MINUTES * MINUTE_IN_SECONDS) || $user ['resetToken'] !== $token)
+		{
+			return false;
+		}
+
+		return true;
 	}
 
 
@@ -706,20 +730,19 @@ class Auth
 			return false;
 		}
 
+		var_dump ($user);
+
 		// Rate‐limit: avoid sending too many reset requests
-		if (self::isResetTokenValid ($user ['resetRequestedAt'], self::RESET_TOKEN_COOL_DOWN * MINUTE_IN_SECONDS))
+		if (self::isStillValidToken ($user ['resetRequestedAt'], self::RESET_TOKEN_COOL_DOWN * MINUTE_IN_SECONDS))
 		{
 			return false;
 		}
-
-		// 3. Si el token aún es válido, lo reutilizamos; si no, generamos uno nuevo
-		if (self::isResetTokenValid ($user ['resetRequestedAt'], self::RESET_TOKEN_MAX_MINUTES * MINUTE_IN_SECONDS) && ! empty ($user ['resetToken']))
-		{
-			$token = $user ['resetToken'];
-		}
 		else
 		{
+			// We have returned if the token was still valid, so now we know it is expired or not existing.
 			$token = bin2hex (random_bytes (32));
+
+			var_dump ($token);
 
 			// 4. Guardar token + timestamp de solicitud
 			$now = current_time ('mysql');
@@ -728,10 +751,13 @@ class Auth
 			{
 				return false;
 			}
+
+			var_dump ($updated);
 		}
 
 		// 5. Envío de email. Es get, así que el permalink es perfecto
-		$reset_link = add_query_arg ([ 'zg_action' => 'pass-reset', 'zg_recover_email' => rawurlencode ($email), 'token' => $token], get_permalink ());
+		$emailEncoded = rtrim (strtr (base64_encode ($email), '+/', '-_'), '=');
+		$reset_link = add_query_arg ([ 'zg_action' => 'pass-reset', 'zg_recover_email' => $emailEncoded, 'token' => $token], get_permalink ());
 		$subject = sprintf (__ ('Recupera tu contraseña en %s', 'zentrygate'), wp_specialchars_decode (get_bloginfo ('name'), ENT_QUOTES));
 		$message = sprintf (__ ("Hola %1\$s,\n\nHaz clic en este enlace (válido durante %2\$d minutos) para restablecer tu contraseña:\n\n%3\$s\n\nSi no lo solicitaste, ignora este correo.", 'zentrygate'), esc_html ($user ['name']), self::RESET_TOKEN_MAX_MINUTES, esc_url ($reset_link));
 		$headers = [ 'Content-Type: text/plain; charset=UTF-8'];
@@ -792,6 +818,64 @@ class Auth
                 <?php
 
 		esc_html_e ('Ir al inicio de sesión', 'zentrygate');
+		?>
+            </a>
+        </p>
+    </div>
+    <?php
+	}
+
+
+	public static function renderPasswordResetSuccess (): void
+	{
+		?>
+    <div class="zg-notice zg-notice-success" role="alert" aria-live="polite" aria-labelledby="zg-verification-success-title">
+        <strong id="zg-verification-success-title">
+            <?php
+
+		esc_html_e ('Password cambiada', 'zentrygate');
+		?>
+        </strong>
+        <p>
+            <?php
+
+		esc_html_e ('Has cambiado la contraseña. Ya puedes iniciar sesión con la nueva.', 'zentrygate');
+		?>
+        </p>
+        <p>
+            <a href="<?=esc_url (add_query_arg ('zg_action', 'login'));?>">
+                <?php
+
+		esc_html_e ('Ir al inicio de sesión', 'zentrygate');
+		?>
+            </a>
+        </p>
+    </div>
+    <?php
+	}
+
+
+	public static function renderPassResetFailed (): void
+	{
+		?>
+    <div class="zg-notice zg-notice-error" role="alert" aria-live="assertive" aria-labelledby="zg-verification-failed-title">
+        <strong id="zg-verification-failed-title">
+            <?php
+
+		esc_html_e ('Enlace caducado', 'zentrygate');
+		?>
+        </strong>
+        <p>
+            <?php
+
+		esc_html_e ('El enlace de cambio de contraseña no es válido o ha expirado. Por favor, solicita un nuevo enlace.', 'zentrygate');
+		?>
+        </p>
+        <p class="zg-auth-links">
+            <a href="<?=esc_url (add_query_arg ('zg_action', 'register'));?>">
+                <?php
+
+		esc_html_e ('Reintentar registrarse', 'zentrygate');
 		?>
             </a>
         </p>

@@ -719,6 +719,16 @@ class Auth
 		esc_html_e ('Por favor, revisa tu correo electrónico y haz clic en el enlace de verificación para activar tu cuenta.', 'zentrygate');
 		?>
         </p>
+        
+        <p class="zg-auth-links">
+            <a href="<?=esc_url (add_query_arg ('zg_action', 'login'));?>">
+                <?php
+
+		esc_html_e ('Ir a pantalla de login', 'zentrygate');
+		?>
+            </a>
+        </p>
+        
     </div>
     <?php
 	}
@@ -801,11 +811,11 @@ class Auth
 		esc_html_e ('El enlace de verificación no es válido o ha expirado. Por favor, solicita un nuevo enlace.', 'zentrygate');
 		?>
         </p>
-        <p>
+        <p class="zg-auth-links">
             <a href="<?=esc_url (add_query_arg ('zg_action', 'register'));?>">
                 <?php
 
-		esc_html_e ('Ir al registro', 'zentrygate');
+		esc_html_e ('Reintentar registrarse', 'zentrygate');
 		?>
             </a>
         </p>

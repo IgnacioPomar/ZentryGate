@@ -73,7 +73,7 @@ class PageRenderer
 
 					if ($notice === 'check_email')
 					{
-						Auth::renderVerifyEMailForm ();
+						Auth::renderAskUserCheckEmail ();
 					}
 					else if ($notice === 'errors')
 					{
@@ -87,8 +87,7 @@ class PageRenderer
 
 					break;
 				case 'verify':
-					$token = $_GET ['token'] ?? '';
-					if (Auth::handleEmailVerification ($token))
+					if (Auth::handleEmailVerification ())
 					{
 						Auth::renderVerificationSuccess ();
 					}

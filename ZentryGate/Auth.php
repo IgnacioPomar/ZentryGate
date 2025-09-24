@@ -112,30 +112,29 @@ class Auth
 		?>
         <div class="zg-alert zg-alert-error" role="alert" aria-live="assertive" aria-labelledby="<?php
 
-echo esc_attr ($heading_id);
+		echo esc_attr ($heading_id);
 		?>">
             <strong id="<?php
 
-echo esc_attr ($heading_id);
+		echo esc_attr ($heading_id);
 		?>">
                 <?php
 
-echo esc_html__ ('Por favor, corrige los siguientes errores:', 'zentrygate');
+		echo esc_html__ ('Por favor, corrige los siguientes errores:', 'zentrygate');
 		?>
             </strong>
             <ul class="zg-alert-list">
                 <?php
 
-foreach ($out as $msg)
+		foreach ($out as $msg)
 		:
 			?>
                     <li><?php
 
-echo esc_html ($msg);
+			echo esc_html ($msg);
 			?></li>
                 <?php
-
-endforeach
+		endforeach
 		;
 		?>
             </ul>
@@ -703,6 +702,117 @@ endforeach
 		return (bool) wp_mail ($email, $subject, $message, $headers);
 	}
 
+
+	public static function renderAskUserCheckEmail (): void
+	{
+		?>
+    <div class="zg-notice zg-notice-success" role="alert" aria-live="polite" aria-labelledby="zg-check-email-title">
+        <strong id="zg-check-email-title">
+            <?php
+
+		esc_html_e ('Registro completado', 'zentrygate');
+		?>
+        </strong>
+        <p>
+            <?php
+
+		esc_html_e ('Por favor, revisa tu correo electrónico y haz clic en el enlace de verificación para activar tu cuenta.', 'zentrygate');
+		?>
+        </p>
+    </div>
+    <?php
+	}
+
+
+	public static function renderVerificationSuccess (): void
+	{
+		?>
+    <div class="zg-notice zg-notice-success" role="alert" aria-live="polite" aria-labelledby="zg-verification-success-title">
+        <strong id="zg-verification-success-title">
+            <?php
+
+		esc_html_e ('Cuenta verificada', 'zentrygate');
+		?>
+        </strong>
+        <p>
+            <?php
+
+		esc_html_e ('Tu cuenta ha sido verificada correctamente. Ya puedes iniciar sesión.', 'zentrygate');
+		?>
+        </p>
+        <p>
+            <a href="<?=esc_url (add_query_arg ('zg_action', 'login'));?>">
+                <?php
+
+		esc_html_e ('Ir al inicio de sesión', 'zentrygate');
+		?>
+            </a>
+        </p>
+    </div>
+    <?php
+	}
+
+
+	public static function handleEmailVerification (): bool
+	{
+		if (! isset ($_GET ['e'], $_GET ['token']))
+		{
+			return false;
+		}
+
+		$email = base64_decode ($_GET ['e']);
+		$token = sanitize_text_field (wp_unslash ($_GET ['token']));
+
+		global $wpdb;
+		$user = $wpdb->get_row ($wpdb->prepare ("SELECT email, isEnabled, verifyToken
+               FROM {$wpdb->prefix}zgUsers
+              WHERE email = %s", $email), ARRAY_A);
+
+		if (! $user || (bool) $user ['isEnabled'] || $user ['verifyToken'] !== $token)
+		{
+			return false;
+		}
+
+		// Verificación correcta: activar usuario y limpiar token
+		$updated = $wpdb->update ("{$wpdb->prefix}zgUsers", [ 'isEnabled' => 1, 'verifyToken' => null], [ 'email' => $email], [ '%d', '%s'], [ '%s']);
+		if (false === $updated)
+		{
+
+			return false;
+		}
+
+		return true;
+	}
+
+
+	public static function renderVerificationFailed (): void
+	{
+		?>
+    <div class="zg-notice zg-notice-error" role="alert" aria-live="assertive" aria-labelledby="zg-verification-failed-title">
+        <strong id="zg-verification-failed-title">
+            <?php
+
+		esc_html_e ('Verificación fallida', 'zentrygate');
+		?>
+        </strong>
+        <p>
+            <?php
+
+		esc_html_e ('El enlace de verificación no es válido o ha expirado. Por favor, solicita un nuevo enlace.', 'zentrygate');
+		?>
+        </p>
+        <p>
+            <a href="<?=esc_url (add_query_arg ('zg_action', 'register'));?>">
+                <?php
+
+		esc_html_e ('Ir al registro', 'zentrygate');
+		?>
+            </a>
+        </p>
+    </div>
+    <?php
+	}
+
 	/**
 	 * Esquema configurable de campos extra de registro.
 	 * En el futuro se cargará desde BBDD/opciones.
@@ -757,7 +867,7 @@ endforeach
             <h2 id="zg-register-title"><?=esc_html_e ('Crear cuenta', 'zentrygate');?></h2>
 
             <?php
-            $old=[];
+		$old = [ ];
 		if ($hasOldData)
 		{
 			$errors = self::flashTake ('zg_err_', $_GET ['errkey'] ?? '');
@@ -1034,6 +1144,8 @@ endforeach
 			self::$lastErrors [] = __ ('Las contraseñas no coinciden.', 'zentrygate');
 		}
 
+		// YAGNI: Validación de fortaleza de la contraseña (opcional)
+
 		// 3) Validar campos requeridos del JSON (self::$schemaJson)
 		$schema = self::getRegisterSchemaArray ();
 		$otherRaw = (isset ($_POST ['other']) && is_array ($_POST ['other'])) ? $_POST ['other'] : [ ];
@@ -1140,8 +1252,10 @@ endforeach
 		}
 
 		// 6) Enviar email de verificación
-		$current_url = home_url (add_query_arg ([ ], wp_unslash ($_SERVER ['REQUEST_URI'] ?? '/')));
-		$verify_url = add_query_arg ([ 'zg_action' => 'verify', 'token' => $verifyToken], $current_url);
+		$verifyUrl = $_POST ['redirect_to'] ?? get_permalink ();
+		$verifyUrl = esc_url_raw ($verifyUrl);
+
+		$verifyUrl = add_query_arg ([ 'zg_action' => 'verify', 'token' => $verifyToken, 'e' => base64_encode ($email)], $verifyUrl);
 
 		$blogname = wp_specialchars_decode (get_bloginfo ('name'), ENT_QUOTES);
 		$subject = sprintf (__ ('Confirma tu cuenta en %s', 'zentrygate'), $blogname);
@@ -1149,7 +1263,7 @@ endforeach
 		// Cuerpo HTML sencillo
 		$body = '<p>' . sprintf (__ ('Hola %s,', 'zentrygate'), esc_html ($name)) . '</p>';
 		$body .= '<p>' . esc_html__ ('Gracias por registrarte. Para activar tu cuenta, confirma tu correo haciendo clic en el siguiente enlace:', 'zentrygate') . '</p>';
-		$body .= '<p><a href="' . esc_url ($verify_url) . '">' . esc_html ($verify_url) . '</a></p>';
+		$body .= '<p><a href="' . esc_url ($verifyUrl) . '">' . esc_html ($verifyUrl) . '</a></p>';
 		$body .= '<p>' . esc_html__ ('Si no has solicitado esta cuenta, puedes ignorar este mensaje.', 'zentrygate') . '</p>';
 
 		$headers = [ 'Content-Type: text/html; charset=UTF-8'];

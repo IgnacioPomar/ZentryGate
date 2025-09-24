@@ -96,20 +96,19 @@ class PageRenderer
 						Auth::renderVerificationFailed ();
 					}
 					break;
-				case 'pass_recovery':
-					if ($_SERVER ['REQUEST_METHOD'] === 'POST' && isset ($_POST ['zg_recovery_submit']))
+				case 'pass_recovery': // Only sends the email with the token
+					if (Auth::handleRecoveryGet ())
 					{
-						// Genera resetToken + resetRequestedAt y envía email con enlace
-						// (mensaje SIEMPRE neutral: “si tu email existe, recibirás instrucciones”)
-						Auth::handleRecoveryPost ();
 						Auth::renderRecoveryRequested (); // siempre éxito neutral
-						break;
 					}
-					Auth::renderRecoveryForm (); // sólo un campo email + nonce
+					else
+					{
+						Auth::renderRecoveryForm ();
+					}
 					break;
 
 				// --- FORMULARIO DE RESET (desde enlace del email con token) ---
-				case 'reset':
+				case 'pass-reset':
 					$token = $_GET ['token'] ?? '';
 					if (! Auth::isValidResetToken ($token))
 					{

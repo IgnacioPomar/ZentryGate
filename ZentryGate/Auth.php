@@ -528,6 +528,43 @@ class Auth
 	}
 
 
+	public static function handleRecoveryGet (): bool
+	{
+		if (isset ($_GET ['zg_recover_email']))
+		{
+
+			$email = sanitize_email ($_GET ['zg_recover_email']);
+			if (! is_email ($email))
+			{
+				echo '<p class="error">' . esc_html_e ('El correo electrónico proporcionado no es válido.', 'zentrygate') . '</p>';
+				return false;
+			}
+
+			self::sendPasswordResetToken ($email);
+			return true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+
+	/**
+	 * Render the notice after requesting password recovery.
+	 * Always a neutral message: "if your email exists, you will receive instructions"
+	 */
+	public static function renderRecoveryRequested (): void
+	{
+		?>
+    <div class="zg-notice zg-notice-success" role="alert" aria-live="polite" aria-labelledby="zg-recovery-requested-title">
+        <strong id="zg-recovery-requested-title"><?=esc_html_e ('Solicitud de recuperación enviada', 'zentrygate');?></strong>
+        <p><?=esc_html_e ('Si el correo electrónico proporcionado existe en nuestro sistema, recibirás por correo electrónico un enlace para restablecer tu contraseña.', 'zentrygate');?></p>
+        <p class="zg-auth-links"><a href="<?=esc_url (add_query_arg ('zg_action', 'login'));?>"><?=esc_html_e ('Ir a pantalla de login', 'zentrygate');?></a></p>
+    </div><?php
+	}
+
+
 	/**
 	 * Render the password recovery form to ask for the email.
 	 */
@@ -693,8 +730,8 @@ class Auth
 			}
 		}
 
-		// 5. Envío de email
-		$reset_link = add_query_arg ([ 'zg_action' => 'pass-recovery', 'zg_recover_email' => rawurlencode ($email), 'token' => $token], get_permalink ());
+		// 5. Envío de email. Es get, así que el permalink es perfecto
+		$reset_link = add_query_arg ([ 'zg_action' => 'pass-reset', 'zg_recover_email' => rawurlencode ($email), 'token' => $token], get_permalink ());
 		$subject = sprintf (__ ('Recupera tu contraseña en %s', 'zentrygate'), wp_specialchars_decode (get_bloginfo ('name'), ENT_QUOTES));
 		$message = sprintf (__ ("Hola %1\$s,\n\nHaz clic en este enlace (válido durante %2\$d minutos) para restablecer tu contraseña:\n\n%3\$s\n\nSi no lo solicitaste, ignora este correo.", 'zentrygate'), esc_html ($user ['name']), self::RESET_TOKEN_MAX_MINUTES, esc_url ($reset_link));
 		$headers = [ 'Content-Type: text/plain; charset=UTF-8'];
@@ -770,7 +807,8 @@ class Auth
 			return false;
 		}
 
-		$email = base64_decode ($_GET ['e']);
+		$email = base64_decode (str_pad (strtr ($_COOKIE ['e'], '-_', '+/'), strlen ($_COOKIE ['e']) % 4, '=', STR_PAD_RIGHT));
+
 		$token = sanitize_text_field (wp_unslash ($_GET ['token']));
 
 		global $wpdb;
@@ -1265,7 +1303,9 @@ class Auth
 		$verifyUrl = $_POST ['redirect_to'] ?? get_permalink ();
 		$verifyUrl = esc_url_raw ($verifyUrl);
 
-		$verifyUrl = add_query_arg ([ 'zg_action' => 'verify', 'token' => $verifyToken, 'e' => base64_encode ($email)], $verifyUrl);
+		$emailEncoded = rtrim (strtr (base64_encode ($email), '+/', '-_'), '=');
+
+		$verifyUrl = add_query_arg ([ 'zg_action' => 'verify', 'token' => $verifyToken, 'e' => $emailEncoded], $verifyUrl);
 
 		$blogname = wp_specialchars_decode (get_bloginfo ('name'), ENT_QUOTES);
 		$subject = sprintf (__ ('Confirma tu cuenta en %s', 'zentrygate'), $blogname);

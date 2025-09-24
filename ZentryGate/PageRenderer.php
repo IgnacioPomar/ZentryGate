@@ -59,6 +59,7 @@ class PageRenderer
 		else
 		{
 			$action = $_GET ['zg_action'] ?? 'login';
+			$notice = $_GET ['zg_notice'] ?? '';
 			// Remember: the login actions were handled in Auth::processEarlyActions
 			// (because they set coockies, and so, they need to be processed before headers are sent)
 
@@ -69,16 +70,21 @@ class PageRenderer
 					Auth::renderLoginForm ();
 					break;
 				case 'register':
-					if ($_SERVER ['REQUEST_METHOD'] === 'POST' && isset ($_POST ['zg_register_submit']))
+
+					if ($notice === 'check_email')
 					{
-						// Debe: validar nonce, email único, password policy, captchas si aplican, consentimiento
-						if (Auth::handleRegisterPost ())
-						{
-							Auth::renderVerifyEMailForm ();
-							break;
-						}
+						Auth::renderVerifyEMailForm ();
 					}
-					Auth::renderRegisterForm (); // email, nombre, password, aceptar T&C/cookies
+					else if ($notice === 'errors')
+					{
+						Auth::renderRegisterForm (true); // <<< ver siguiente punto
+						break;
+					}
+					else
+					{
+						Auth::renderRegisterForm ();
+					}
+
 					break;
 				case 'verify':
 					$token = $_GET ['token'] ?? '';

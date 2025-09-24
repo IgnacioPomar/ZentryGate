@@ -7,6 +7,7 @@ namespace ZentryGate;
  */
 class Auth
 {
+	protected static array $lastErrors = [ ];
 	private static bool $isInitialized = false;
 	private static string $sessionDir;
 	private static ?array $cookieData = null;
@@ -35,6 +36,111 @@ class Auth
 		self::loadCookieData ();
 		self::processEarlyActions ();
 		self::$isInitialized = true;
+	}
+
+
+	// Guarda data temporalmente y devuelve una clave
+	public static function flashSet (string $prefix, array $data, int $ttl = 300): string
+	{
+		$key = bin2hex (random_bytes (8));
+		set_transient ($prefix . $key, $data, $ttl);
+		return $key;
+	}
+
+
+	// Lee y borra el flash
+	public static function flashTake (string $prefix, string $key): array
+	{
+		if (! $key) return [ ];
+		$data = get_transient ($prefix . $key);
+		if ($data !== false) delete_transient ($prefix . $key);
+		return is_array ($data) ? $data : [ ];
+	}
+
+
+	/**
+	 * Pinta un bloque de errores accesible.
+	 * Acepta strings, arrays anidados y/o WP_Error.
+	 */
+	public static function renderErrors (array $errors): void
+	{
+		// Normalizar: aplanar y limpiar
+		$out = [ ];
+
+		$push = static function ($msg) use ( &$out)
+		{
+			if (is_scalar ($msg))
+			{
+				$s = trim ((string) $msg);
+				if ($s !== '')
+				{
+					$out [] = $s;
+				}
+			}
+		};
+
+		foreach ($errors as $e)
+		{
+			if ($e instanceof \WP_Error)
+			{
+				foreach ($e->get_error_messages () as $m)
+				{
+					$push ($m);
+				}
+			}
+			elseif (is_array ($e))
+			{
+				$it = new \RecursiveIteratorIterator (new \RecursiveArrayIterator ($e));
+				foreach ($it as $m)
+				{
+					$push ($m);
+				}
+			}
+			else
+			{
+				$push ($e);
+			}
+		}
+
+		$out = array_values (array_unique ($out));
+		if (empty ($out))
+		{
+			return;
+		}
+
+		$heading_id = 'zg-errors-title-' . uniqid ('', false);
+		?>
+        <div class="zg-alert zg-alert-error" role="alert" aria-live="assertive" aria-labelledby="<?php
+
+echo esc_attr ($heading_id);
+		?>">
+            <strong id="<?php
+
+echo esc_attr ($heading_id);
+		?>">
+                <?php
+
+echo esc_html__ ('Por favor, corrige los siguientes errores:', 'zentrygate');
+		?>
+            </strong>
+            <ul class="zg-alert-list">
+                <?php
+
+foreach ($out as $msg)
+		:
+			?>
+                    <li><?php
+
+echo esc_html ($msg);
+			?></li>
+                <?php
+
+endforeach
+		;
+		?>
+            </ul>
+        </div>
+        <?php
 	}
 
 
@@ -595,5 +701,470 @@ class Auth
 		$headers = [ 'Content-Type: text/plain; charset=UTF-8'];
 
 		return (bool) wp_mail ($email, $subject, $message, $headers);
+	}
+
+	/**
+	 * Esquema configurable de campos extra de registro.
+	 * En el futuro se cargará desde BBDD/opciones.
+	 * name: etiqueta visible; tag: clave en otherData; type: text|tel|email|date|textarea|checkbox|select|multiselect
+	 */
+	protected static string $schemaJson = <<<JSON
+	[
+	    {"name":"DNI/NIE","tag":"nif","type":"text","required":true},
+		{"name":"Empresa","tag":"org","type":"text","required":true},
+		{"name":"Cargo","tag":"role","type":"text","required":true},
+		{"name":"Teléfono","tag":"phone","type":"tel","required":true}
+	]
+	JSON;
+
+
+	/**
+	 * Decodifica el esquema de registro.
+	 */
+	protected static function getRegisterSchemaArray (): array
+	{
+		$arr = json_decode (self::$schemaJson, true);
+		return is_array ($arr) ? $arr : [ ];
+	}
+
+
+	/**
+	 * Render the register form.
+	 */
+	public static function renderRegisterForm (bool $hasOldData = false): void
+	{
+		// Esquema configurable en JSON (futuro: cargar de opciones/BBDD)
+		$extraFields = self::getRegisterSchemaArray ();
+
+		// Helpers locales para IDs/atributos seguros
+
+		$isChecked = function (string $name): bool
+		{
+			return isset ($_POST [$name]) && ($_POST [$name] === '1' || $_POST [$name] === 'on');
+		};
+
+		$redirectTo = esc_url (add_query_arg ([ 'zg_action' => 'register'], get_permalink ()));
+		$actionUrl = esc_url (admin_url ('admin-post.php'));
+
+		?>
+        <form method="post" class="zg-register-form" aria-labelledby="zg-register-title" novalidate action="<?=$actionUrl?>">
+        <input type="hidden" name="action" value="zg_register">
+        <input type="hidden" name="zg_action" value="register">
+        <input type="hidden" name="redirect_to" value="<?=$redirectTo;?>">
+    
+            
+
+            <h2 id="zg-register-title"><?=esc_html_e ('Crear cuenta', 'zentrygate');?></h2>
+
+            <?php
+            $old=[];
+		if ($hasOldData)
+		{
+			$errors = self::flashTake ('zg_err_', $_GET ['errkey'] ?? '');
+			$old = self::flashTake ('zg_old_', $_GET ['oldkey'] ?? '');
+
+			if (! empty ($errors))
+			{
+				self::renderErrors ($errors); // pinta tu bloque de errores
+			}
+		}
+
+		$page_id = intval (get_option ('zg_register_form_page'));
+		if ($page_id)
+		{
+			echo apply_filters ('the_content', get_post_field ('post_content', $page_id));
+		}
+		wp_nonce_field ('zg_register_action', 'zg_register_nonce', false);
+		?>
+		
+		
+
+            <div class="zg-form-body">
+                <!-- Nombre (mínimo, fuera de JSON) -->
+                <label for="zg_reg_name">
+                    <?=esc_html_e ('Nombre y apellidos', 'zentrygate');?>
+                    <input
+                        type="text"
+                        id="zg_reg_name"
+                        name="name"
+                        value="<?=isset ($old ['name']) ? esc_attr (wp_unslash ($old ['name'])) : '';?>"
+                        placeholder="<?=esc_attr_e ('Nombre y apellidos', 'zentrygate');?>"
+                        required
+                        aria-required="true"
+                        autocomplete="name"
+                    >
+                </label>
+
+                <!-- Email (mínimo, fuera de JSON) -->
+                <label for="zg_reg_email">
+                    <?=esc_html_e ('Correo electrónico', 'zentrygate');?>
+                    <input
+                        type="email"
+                        id="zg_reg_email"
+                        name="email"
+                        value="<?=isset ($old ['email']) ? esc_attr (wp_unslash ($old ['email'])) : '';?>"
+                        placeholder="<?=esc_attr_e ('ejemplo@correo.com', 'zentrygate');?>"
+                        required
+                        aria-required="true"
+                        autocomplete="email"
+                    >
+                </label>
+                
+                
+                <label for="zg_hp_name" id="zg_hp_label">
+                    <?php
+		// honeypot field, should be hidden with CSS
+		echo 'Hall Name';
+		?>
+                    <input
+                        id="zg_hp_name"
+                        name="zg_hp_name"
+                        value=""
+                        placeholder="Nombre y apellidos"
+                    >
+                </label>
+
+                <!-- Password + confirmación (mínimo, fuera de JSON) -->
+                <label for="zg_reg_password">
+                    <?=esc_html_e ('Contraseña', 'zentrygate');?>
+                    <input
+                        type="password"
+                        id="zg_reg_password"
+                        name="password"
+                        placeholder="<?=esc_attr_e ('••••••••••', 'zentrygate');?>"
+                        required
+                        aria-required="true"
+                        autocomplete="new-password"
+                    >
+                </label>
+                <label for="zg_reg_password2">
+                    <?=esc_html_e ('Repite la contraseña', 'zentrygate');?>
+                    <input
+                        type="password"
+                        id="zg_reg_password2"
+                        name="password2"
+                        placeholder="<?=esc_attr_e ('••••••••••', 'zentrygate');?>"
+                        required
+                        aria-required="true"
+                        autocomplete="new-password"
+                    >
+                </label>
+
+                <?php
+		// Campos extra (configurables por JSON)
+		if (! empty ($extraFields))
+		{
+			foreach ($extraFields as $cfg)
+			{
+				$label = isset ($cfg ['name']) ? (string) $cfg ['name'] : '';
+				$tag = isset ($cfg ['tag']) ? (string) $cfg ['tag'] : '';
+				$type = isset ($cfg ['type']) ? (string) $cfg ['type'] : 'text';
+				$req = ! empty ($cfg ['required']);
+				$id = $tag;
+
+				if ($label === '' || $tag === '')
+				{
+					continue;
+				}
+
+				// El nombre de POST de estos campos va en 'other[...]'
+				$postName = 'other[' . $tag . ']';
+				$value = isset ($old ['other'] [$tag]) ? wp_unslash ($old ['other'] [$tag]) : '';
+
+				echo '<div class="zg-field zg-field-' . esc_attr ($type) . '">';
+
+				switch ($type)
+				{
+					case 'textarea':
+						echo '<label for="' . esc_attr ($id) . '">' . esc_html ($label) . ($req ? ' *' : '') . '<textarea id="' . esc_attr ($id) . '" name="' . esc_attr ($postName) . '" ' . 'rows="3">' . esc_textarea (is_string ($value) ? $value : '') . '</textarea></label>';
+						break;
+
+					case 'checkbox':
+						// Para checkbox usamos valor "1"
+						$checked = $isChecked ($postName);
+						echo '<label class="zg-checkbox">' . '<input type="checkbox" id="' . esc_attr ($id) . '" name="' . esc_attr ($postName) . '" value="1" ' . ($checked ? 'checked ' : '') . '>' . ' ' . esc_html ($label) . ($req ? ' *' : '') . '</label>';
+						break;
+
+					case 'select':
+						$choices = isset ($cfg ['choices']) && is_array ($cfg ['choices']) ? $cfg ['choices'] : [ ];
+						echo '<label for="' . esc_attr ($id) . '">' . esc_html ($label) . ($req ? ' *' : '') . '<select id="' . esc_attr ($id) . '" name="' . esc_attr ($postName) . '" ' . '>';
+						echo '<option value="">' . esc_html__ ('-- Selecciona --', 'zentrygate') . '</option>';
+						foreach ($choices as $opt)
+						{
+							$sel = ((string) $value === (string) $opt) ? ' selected' : '';
+							echo '<option value="' . esc_attr ($opt) . '"' . $sel . '>' . esc_html ($opt) . '</option>';
+						}
+						echo '</select></label>';
+						break;
+
+					case 'multiselect':
+						$choices = isset ($cfg ['choices']) && is_array ($cfg ['choices']) ? $cfg ['choices'] : [ ];
+						$vals = isset ($old ['other'] [$tag]) && is_array ($old ['other'] [$tag]) ? array_map ('wp_unslash', $old ['other'] [$tag]) : [ ];
+						// Para multi, usamos name="other[tag][]" y multiple
+						echo '<label for="' . esc_attr ($id) . '">' . esc_html ($label) . ($req ? ' *' : '') . '<select id="' . esc_attr ($id) . '" name="other[' . esc_attr ($tag) . '][]" multiple ' . ' size="4">';
+						foreach ($choices as $opt)
+						{
+							$sel = in_array ((string) $opt, array_map ('strval', $vals), true) ? ' selected' : '';
+							echo '<option value="' . esc_attr ($opt) . '"' . $sel . '>' . esc_html ($opt) . '</option>';
+						}
+						echo '</select></label>';
+						break;
+
+					default:
+						// text | email | tel | date ...
+						echo '<label for="' . esc_attr ($id) . '">' . esc_html ($label) . ($req ? ' *' : '') . '<input type="' . esc_attr ($type) . '"' . ' id="' . esc_attr ($id) . '"' . ' name="' . esc_attr ($postName) . '"' . ' value="' . esc_attr (is_string ($value) ? $value : '') . '" ' . '>' . '</label>';
+						break;
+				}
+
+				echo '</div>';
+			}
+		}
+		?>
+            </div>
+
+            <div class="zg-form-footer">
+                <button type="submit" name="zg_register_submit" class="button button-primary">
+                    <?=esc_html_e ('Crear cuenta', 'zentrygate');?>
+                </button>
+
+                <p class="zg-auth-links">
+                    <a href="<?=esc_url (add_query_arg ('zg_action', 'login'));?>">
+                        <?=esc_html_e ('¿Ya tienes cuenta? Inicia sesión', 'zentrygate');?>
+                    </a>
+                    &nbsp;·&nbsp;
+                    <a href="<?=esc_url (add_query_arg ('zg_action', 'pass_recovery'));?>">
+                        <?=esc_html_e ('¿Olvidaste tu contraseña?', 'zentrygate');?>
+                    </a>
+                </p>
+            </div>
+        </form>
+        <?php
+	}
+
+
+	// Captura campos del form de registro (SIN contraseñas)
+	protected static function captureRegisterOldInput (): array
+	{
+		$old = [ ];
+		$old ['name'] = sanitize_text_field (wp_unslash ($_POST ['name'] ?? ''));
+		$old ['email'] = sanitize_email (wp_unslash ($_POST ['email'] ?? ''));
+		$old ['other'] = [ ];
+
+		if (isset ($_POST ['other']) && is_array ($_POST ['other']))
+		{
+			foreach ($_POST ['other'] as $k => $v)
+			{
+				if (is_array ($v))
+				{
+					$old ['other'] [$k] = array_map (static fn ($x) => sanitize_text_field (wp_unslash ((string) $x)), $v);
+				}
+				else
+				{
+					$old ['other'] [$k] = sanitize_text_field (wp_unslash ((string) $v));
+				}
+			}
+		}
+		return $old;
+	}
+
+
+	public static function handleRegisterPostEntryPoint (): void
+	{
+		$ok = self::handleRegisterPost (); // valida nonce, inserta, envía email...
+		$redirect = isset ($_POST ['redirect_to']) ? esc_url_raw (wp_unslash ($_POST ['redirect_to'])) : home_url ('/');
+		if ($ok)
+		{
+			$url = add_query_arg ([ 'zg_action' => 'register', 'zg_notice' => 'check_email'], $redirect);
+		}
+		else
+		{
+			$errkey = self::flashSet ('zg_err_', self::$lastErrors);
+			$oldkey = self::flashSet ('zg_old_', self::captureRegisterOldInput ());
+			$url = add_query_arg ([ 'zg_action' => 'register', 'zg_notice' => 'errors', 'errkey' => $errkey, 'oldkey' => $oldkey], $redirect);
+		}
+		wp_safe_redirect ($url);
+		exit ();
+	}
+
+
+	/**
+	 * Procesa el POST del registro.
+	 * Devuelve true si el usuario se creó (y se intentó enviar el email); false si hubo errores.
+	 */
+	public static function handleRegisterPost (): bool
+	{
+		self::$lastErrors = [ ];
+
+		// 1) Nonce
+		$nonce = isset ($_POST ['zg_register_nonce']) ? wp_unslash ($_POST ['zg_register_nonce']) : '';
+		if (! $nonce || ! wp_verify_nonce ($nonce, 'zg_register_action'))
+		{
+			self::$lastErrors [] = __ ('La sesión ha caducado. Por favor, recarga la página e inténtalo de nuevo.', 'zentrygate');
+			return false;
+		}
+
+		// 1.1) Honeypot (campo oculto)
+		if (isset ($_POST ['zg_hp_name']) && trim ((string) $_POST ['zg_hp_name']) !== '')
+		{
+			// Campo oculto rellenado: bot
+			self::$lastErrors [] = __ ('Error en el formulario. Por favor, recarga la página e inténtalo de nuevo.', 'zentrygate');
+			return true; // Decimos que se ha enviado un email para no dar pistas al bot
+		}
+
+		// 2) Campos mínimos
+		$name = isset ($_POST ['name']) ? sanitize_text_field (wp_unslash ($_POST ['name'])) : '';
+		$email = isset ($_POST ['email']) ? sanitize_email (wp_unslash ($_POST ['email'])) : '';
+		$password = (string) ($_POST ['password'] ?? '');
+		$password2 = (string) ($_POST ['password2'] ?? '');
+
+		if ($name === '')
+		{
+			self::$lastErrors [] = __ ('El nombre es obligatorio.', 'zentrygate');
+		}
+		if (! is_email ($email))
+		{
+			self::$lastErrors [] = __ ('Debes indicar un correo electrónico válido.', 'zentrygate');
+		}
+		if ($password === '' || $password2 === '')
+		{
+			self::$lastErrors [] = __ ('Debes introducir y confirmar la contraseña.', 'zentrygate');
+		}
+		elseif ($password !== $password2)
+		{
+			self::$lastErrors [] = __ ('Las contraseñas no coinciden.', 'zentrygate');
+		}
+
+		// 3) Validar campos requeridos del JSON (self::$schemaJson)
+		$schema = self::getRegisterSchemaArray ();
+		$otherRaw = (isset ($_POST ['other']) && is_array ($_POST ['other'])) ? $_POST ['other'] : [ ];
+		$otherClean = [ ];
+
+		foreach ($schema as $cfg)
+		{
+			if (! is_array ($cfg))
+			{
+				continue;
+			}
+			$label = isset ($cfg ['name']) ? (string) $cfg ['name'] : '';
+			$tag = isset ($cfg ['tag']) ? (string) $cfg ['tag'] : '';
+			$type = isset ($cfg ['type']) ? (string) $cfg ['type'] : 'text';
+			$req = ! empty ($cfg ['required']);
+
+			if ($label === '' || $tag === '')
+			{
+				continue;
+			}
+
+			$val = $otherRaw [$tag] ?? null;
+
+			switch ($type)
+			{
+				case 'multiselect':
+					$vals = is_array ($val) ? array_map ('wp_unslash', $val) : [ ];
+					$vals = array_map ('sanitize_text_field', $vals);
+					if ($req && count (array_filter ($vals, static fn ($v) => trim ((string) $v) !== '')) === 0)
+					{
+						self::$lastErrors [] = sprintf (__ ('El campo "%s" es obligatorio.', 'zentrygate'), $label);
+					}
+					$otherClean [$tag] = $vals;
+					break;
+
+				case 'checkbox':
+					$checked = isset ($otherRaw [$tag]) && ($otherRaw [$tag] === '1' || $otherRaw [$tag] === 'on');
+					if ($req && ! $checked)
+					{
+						self::$lastErrors [] = sprintf (__ ('Debes marcar "%s".', 'zentrygate'), $label);
+					}
+					$otherClean [$tag] = $checked ? 1 : 0;
+					break;
+
+				case 'textarea':
+					$s = is_string ($val) ? wp_kses_post (wp_unslash ($val)) : '';
+					if ($req && $s === '')
+					{
+						self::$lastErrors [] = sprintf (__ ('El campo "%s" es obligatorio.', 'zentrygate'), $label);
+					}
+					$otherClean [$tag] = $s;
+					break;
+
+				default:
+					$s = is_string ($val) ? sanitize_text_field (wp_unslash ($val)) : '';
+					if ($req && $s === '')
+					{
+						self::$lastErrors [] = sprintf (__ ('El campo "%s" es obligatorio.', 'zentrygate'), $label);
+					}
+					$otherClean [$tag] = $s;
+					break;
+			}
+		}
+
+		if (! empty (self::$lastErrors))
+		{
+			return false;
+		}
+
+		// 4) Email único
+		global $wpdb;
+		$table = $wpdb->prefix . 'zgUsers';
+		$exists = $wpdb->get_var ($wpdb->prepare ("SELECT id FROM {$table} WHERE email = %s AND deletedAt IS NULL LIMIT 1", $email));
+		if ($exists)
+		{
+			self::$lastErrors [] = __ ('Ya existe una cuenta con ese correo electrónico.', 'zentrygate');
+			return false;
+		}
+
+		// 5) Preparar inserción
+		$passwordHash = password_hash ($password, PASSWORD_DEFAULT);
+		$verifyToken = bin2hex (random_bytes (32));
+		$unsubscribeToken = bin2hex (random_bytes (32));
+		$status = 'active'; // hoy activo, en el futuro podrás usar 'pending'
+		$isEnabled = 0; // no habilitado hasta verificar email
+		$otherJson = wp_json_encode ($otherClean, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+		$data = [ 'email' => $email, 'name' => $name, 'passwordHash' => $passwordHash, 'status' => $status, 'isAdmin' => 0, 'isEnabled' => $isEnabled, 'otherData' => $otherJson, 'verifyToken' => $verifyToken, 'unsubscribeToken' => $unsubscribeToken, 'failedLoginCount' => 0 // emailVerifiedAt = NULL por defecto
+		                                                                                                                                                                                                                                                                           // lockedUntil = NULL por defecto
+		];
+		$format = [ '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%d'];
+
+		$ok = $wpdb->insert ($table, $data, $format);
+		if (! $ok)
+		{
+			// Mensaje genérico + detalle técnico en debug si quieres
+			self::$lastErrors [] = __ ('No se pudo crear la cuenta en este momento. Inténtalo más tarde.', 'zentrygate');
+			if (! empty ($wpdb->last_error))
+			{
+				// error técnico opcional para log
+				error_log ('[ZentryGate] handleRegisterPost insert error: ' . $wpdb->last_error);
+			}
+			return false;
+		}
+
+		// 6) Enviar email de verificación
+		$current_url = home_url (add_query_arg ([ ], wp_unslash ($_SERVER ['REQUEST_URI'] ?? '/')));
+		$verify_url = add_query_arg ([ 'zg_action' => 'verify', 'token' => $verifyToken], $current_url);
+
+		$blogname = wp_specialchars_decode (get_bloginfo ('name'), ENT_QUOTES);
+		$subject = sprintf (__ ('Confirma tu cuenta en %s', 'zentrygate'), $blogname);
+
+		// Cuerpo HTML sencillo
+		$body = '<p>' . sprintf (__ ('Hola %s,', 'zentrygate'), esc_html ($name)) . '</p>';
+		$body .= '<p>' . esc_html__ ('Gracias por registrarte. Para activar tu cuenta, confirma tu correo haciendo clic en el siguiente enlace:', 'zentrygate') . '</p>';
+		$body .= '<p><a href="' . esc_url ($verify_url) . '">' . esc_html ($verify_url) . '</a></p>';
+		$body .= '<p>' . esc_html__ ('Si no has solicitado esta cuenta, puedes ignorar este mensaje.', 'zentrygate') . '</p>';
+
+		$headers = [ 'Content-Type: text/html; charset=UTF-8'];
+
+		$sent = wp_mail ($email, $subject, $body, $headers);
+
+		// Nota: si el email falla, el usuario queda creado pero no habilitado.
+		// Puedes ofrecer una acción “reenviar verificación” desde la UI.
+		if (! $sent)
+		{
+			error_log ('[ZentryGate] handleRegisterPost: fallo al enviar email de verificación a ' . $email);
+			// No lo marcamos como error bloqueante para evitar duplicidades de alta.
+			// Tu pantalla de success puede mostrar "Te hemos enviado un email... Si no lo recibes, podrás reenviarlo."
+		}
+
+		return true;
 	}
 }

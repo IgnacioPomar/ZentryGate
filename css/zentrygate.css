@@ -2,6 +2,7 @@
 
 /* Contenedor general de los formularios */
 .zg-cookie-form,
+.zg-register-form,
 .zg-login-form {
   max-width: 400px;
   margin: 2em auto;
@@ -37,8 +38,7 @@
   color: #444444;
   font-size: 0.95rem;
 }
-.zg-form-body input[type="email"],
-.zg-form-body input[type="password"] {
+.zg-form-body input  {
   width: 100%;
   padding: 0.6em 0.8em;
   border: 1px solid #cccccc;
@@ -83,12 +83,12 @@
 
 
 /* Enlace de recuperación de contraseña */
-.zg-login-form .zg-auth-links {
+.zentrygate-plugin-page .zg-auth-links {
     margin-top: 0.75rem;
     font-size: 0.875rem;
 }
 
-.zg-login-form .zg-auth-links a {
+.zentrygate-plugin-page .zg-auth-links a {
     color: #0073aa;
     text-decoration: none;
 }
@@ -385,5 +385,11 @@
 }
 
 .zg-cookie-form blockquote {font-style: italic; font-size: 0.85em; margin: 0; padding-left: 1em;  border-left: 3px solid #ccc; color: #555;}
+
+#zg_hp_label {font-weight: bold; margin-top: 1em; display: none;}
+
+.zg-alert { padding: 12px 14px; border-radius: 6px; margin: 12px 0; }
+.zg-alert-error { background: #fde8e8; border: 1px solid #f5b5b5; color: #7a1a1a; }
+.zg-alert .zg-alert-list { margin: 8px 0 0; padding-left: 20px; }
 
 

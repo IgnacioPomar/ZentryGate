@@ -12,7 +12,7 @@ defined ('ABSPATH') || exit ();
 
 // Plugin version defines. Renaneber change also the comments above.
 define ('ZENTRYGATE_VERSION_DB', '1.0.1');
-define ('ZENTRYGATE_VERSION_PLUGIN', '1.0.1');
+define ('ZENTRYGATE_VERSION_PLUGIN', '1.0.2');
 
 if (! defined ('ZENTRYGATE_DIR'))
 {

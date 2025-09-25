@@ -51,6 +51,11 @@ class Install
 		$charsetCollate = $wpdb->get_charset_collate ();
 		$prefix = $wpdb->prefix;
 
+		// -------------------------------
+		// Temporal: borrar tablas que no encajan en el nuevo esquema y han de ser recreadas
+		$wpdb->query ("DROP TABLE IF EXISTS {$prefix}zgReservations;");
+		// -------------------------------
+
 		require_once (ABSPATH . 'wp-admin/includes/upgrade.php');
 
 		$sqlUsers = "CREATE TABLE {$prefix}zgUsers (
@@ -92,16 +97,41 @@ class Install
     ) $charsetCollate;";
 
 		$sqlReservations = "CREATE TABLE {$prefix}zgReservations (
-        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-        userEmail VARCHAR(255) NOT NULL,
-        eventId BIGINT UNSIGNED NOT NULL,
-        sectionId VARCHAR(255) NOT NULL,
-        status ENUM('confirmed','unpaid','waiting_list') NOT NULL,
-        createdAt DATETIME NOT NULL,
-        PRIMARY KEY (id),
-        KEY idxUser (userEmail),
-        KEY idxEvent (eventId)
-    ) $charsetCollate;";
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Identificador único de la reserva',
+            userId BIGINT UNSIGNED NOT NULL COMMENT 'Referencia al usuario (zgUsers.id)',
+            eventId BIGINT UNSIGNED NOT NULL COMMENT 'Referencia al evento',
+            sectionId VARCHAR(64) NOT NULL COMMENT 'Sección del evento (o FK si existe tabla de secciones)',
+            
+            status ENUM('held','pending_payment','confirmed','waiting_list','cancelled','expired') NOT NULL
+                COMMENT 'Estado lógico de la reserva (no confundir con el pago)',
+            paymentStatus ENUM('none','requires_action','processing','succeeded','failed','refunded','partially_refunded','canceled')
+                NOT NULL DEFAULT 'none' COMMENT 'Estado del pago en pasarela',
+                
+            amountCents INT UNSIGNED NULL COMMENT 'Importe en céntimos',
+            currency CHAR(3) NULL COMMENT 'Divisa ISO, p.ej. EUR',
+            paymentIntentId VARCHAR(255) NULL COMMENT 'PaymentIntent ID en Stripe',
+            latestChargeId VARCHAR(255) NULL COMMENT 'Último cargo asociado',
+            refundedCents INT UNSIGNED NULL COMMENT 'Importe reembolsado en céntimos',
+            receiptUrl VARCHAR(512) NULL COMMENT 'URL del recibo de Stripe',
+            stripePayload JSON NULL COMMENT 'Payload completo de Stripe (usar LONGTEXT si no hay soporte JSON)',
+            
+            waitlistPosition INT UNSIGNED NULL COMMENT 'Posición en la lista de espera (FIFO)',
+            expiresAt DATETIME NULL COMMENT 'Fecha límite del hold o del intento de pago',
+            confirmedAt DATETIME NULL COMMENT 'Momento de confirmación',
+            cancelledAt DATETIME NULL COMMENT 'Momento de cancelación',
+            checkedInAt DATETIME NULL COMMENT 'Momento de marcar asistencia',
+            attendanceStatus ENUM('none','checked_in','no_show') NOT NULL DEFAULT 'none'
+                COMMENT 'Estado de asistencia en el evento',
+                
+            createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Fecha de creación',
+            updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                COMMENT 'Última actualización',
+                
+            PRIMARY KEY (id),
+            UNIQUE KEY uq_reservation (eventId, sectionId, userId),
+            KEY idx_event_section (eventId, sectionId, status, createdAt),
+            KEY idx_user_event (userId, eventId)
+        ) $charsetCollate;";
 
 		$sqlCapacity = "CREATE TABLE {$prefix}zgCapacity (
         eventId BIGINT UNSIGNED NOT NULL,

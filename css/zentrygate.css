@@ -1,7 +1,7 @@
 /* rsc/zentrygate.css */
 
 /* Contenedor general de los formularios */
-.zg-notice, .zg-cookie-form,
+.zg-notice, .zg-cookie-form, .zg-user-page,
 .zg-register-form, .zg-login-form {
   max-width: 400px;
   margin: 2em auto;

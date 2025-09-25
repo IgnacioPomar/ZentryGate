@@ -89,6 +89,10 @@ class UserPage
 	 */
 	public function render ()
 	{
+		$name = ' ' . isset ($this->sessionData ['name']) ? sanitize_text_field ($this->sessionData ['name']) : '';
+		echo '<div class="wrap zg-user-page">';
+		echo '<h1>' . esc_html__ ('Gestionando la inscripción de ', 'zentrygate') . $name . '</h1> <div class="zg-user-content">';
+
 		// 3.1) Si no hay evento, mensaje único
 		if (! $this->event)
 		{
@@ -98,6 +102,8 @@ class UserPage
 
 		// 3.2.1) Gestionar POST (único punto que añade mensajes)
 		$this->handlePost ();
+
+		$this->renderMessages ();
 
 		if (! empty ($this->userSubscriptions)) // El usuario tiene alguna subscripción
 		{
@@ -122,8 +128,7 @@ class UserPage
 			$this->renderFormSubscriptions ($this->sectionsStandard);
 		}
 
-		// 3.2.1) Mensajes al final
-		$this->renderMessages ();
+		echo '</div></div>';
 	}
 
 
@@ -269,7 +274,7 @@ class UserPage
 		{
 			$sid = (string) $r ['sectionId'];
 			$status = (string) $r ['status'];
-			$this->userSubscriptions [$sid] = [ 'reservationId' => (int) $r ['id'], 'status' => $status, 'paid' => ($status === 'confirmed')];
+			$this->userSubscriptions [$sid] = [ 'reservationId' => (int) $r ['id'], 'status' => $status, 'needsPayment' => ($status === 'pending_payment')];
 		}
 	}
 
@@ -297,54 +302,55 @@ class UserPage
 			return;
 		}
 
-		echo '<form method="post" class="zg-subscriptions">';
+		$totalDueCents = 0; // acumularemos aquí el coste pendiente
+
 		echo '<ul style="list-style:none;padding:0;margin:0">';
 
 		foreach ($sections as $sid => $section)
 		{
+			if (! isset ($this->availability [$sid]))
+			{
+				continue; // Saltar secciones en las que desconocemos las plazas
+			}
+
 			$label = (string) $section ['label'];
 			$price = (float) $section ['price'];
 
 			$isSubscribed = isset ($this->userSubscriptions [$sid]);
 			$sub = $isSubscribed ? $this->userSubscriptions [$sid] : null;
 
-			$avail = $this->availability [$sid] ?? [ 'code' => 'available', 'spots' => null, 'text' => 'Plazas'];
+			$avail = $this->availability [$sid];
 			$availText = $avail ['text'];
-			if (is_int ($avail ['spots']))
-			{
-				$availText .= ' (' . $avail ['spots'] . ')';
-			}
 
 			echo '<li style="margin:0 0 1rem 0;padding:1rem;border:1px solid #eee;border-radius:8px">';
 			echo '<div style="display:flex;justify-content:space-between;gap:1rem;align-items:center;flex-wrap:wrap">';
 			echo '<div>';
 			echo '<strong>' . esc_html ($label) . '</strong>';
-			echo ' — ' . ($price > 0 ? esc_html (number_format ($price, 2)) . ' €' : 'Gratis');
+			echo ($price > 0 ? ' — ' . esc_html (number_format ($price, 2)) . ' €' : '');
 			echo '</div>';
 
 			echo '<div>';
+
+			$allowButton = TRUE;
+			$buttonText = 'Suscribirme';
+			$buttonValue = 'subscribe_section';
 
 			if ($isSubscribed)
 			{
 				// Estado suscripción
 				$status = $sub ['status'];
-				$paid = $sub ['paid'];
+				$needsPayment = $sub ['needsPayment'];
 
-				echo '<span style="margin-right:1rem">Estado: ' . esc_html ($status) . ($paid ? ' (abonado)' : ' (pendiente)') . '</span>';
+				echo '<span style="margin-right:1rem">Estado: ' . esc_html ($status) . ($needsPayment ? ' (pendiente)' : ' (abonado)') . '</span>';
 
 				// Enlace de pago si pendiente y habilitado
-				if (! $paid && $this->paymentsEnabled)
+				if ($needsPayment)
 				{
-					$payUrl = esc_url (add_query_arg ([ 'zg_pay' => $sid, 'eventId' => (int) $this->event ['id']]));
-					echo '<a class="button" href="' . $payUrl . '" style="margin-right:.5rem">Abonar</a>';
+					$totalDueCents += (int) round (100 * $price);
 				}
 
-				// Botón desuscribirse
-				$nonce = wp_create_nonce ('zg_unsubscribe_' . $this->event ['id'] . '_' . $sid);
-				echo '<button type="submit" class="button button-secondary" name="zg_action" value="unsubscribe_section">Desuscribirme</button>';
-				echo '<input type="hidden" name="eventId" value="' . esc_attr ($this->event ['id']) . '"/>';
-				echo '<input type="hidden" name="sectionId" value="' . esc_attr ($sid) . '"/>';
-				echo '<input type="hidden" name="_zg_nonce" value="' . esc_attr ($nonce) . '"/>';
+				$buttonText = 'Desuscribirme';
+				$buttonValue = 'unsubscribe_section';
 			}
 			else
 			{
@@ -352,23 +358,34 @@ class UserPage
 				echo '<span style="margin-right:1rem">' . esc_html ($availText) . '</span>';
 
 				// Botón suscribirse (solo si no está sin plazas)
-				$canSubscribe = ($avail ['code'] !== 'none');
-				$nonce = wp_create_nonce ('zg_subscribe_' . $this->event ['id'] . '_' . $sid);
-
-				echo '<button type="submit" class="button button-primary" name="zg_action" value="subscribe_section"' . ($canSubscribe ? '' : ' disabled') . '>Suscribirme</button>';
-
-				echo '<input type="hidden" name="eventId" value="' . esc_attr ($this->event ['id']) . '"/>';
-				echo '<input type="hidden" name="sectionId" value="' . esc_attr ($sid) . '"/>';
-				echo '<input type="hidden" name="_zg_nonce" value="' . esc_attr ($nonce) . '"/>';
+				$allowButton = ($avail ['code'] !== 'none');
 			}
 
-			echo '</div>';
-			echo '</div>';
+			// Formulario de
+			echo '<form method="post" style="display:inline">';
+
+			wp_nonce_field ("zg_subscribe_{$this->event ['id']}_" . (string) $section ['id'], '_zg_nonce');
+			echo '<button type="submit" class="button button-primary" name="zg_direct_action" value="' . $buttonValue . '"' . ($allowButton ? '' : ' disabled') . '>' . $buttonText . '</button>';
+			echo '<input type="hidden" name="eventId" value="' . esc_attr ($this->event ['id']) . '"/>';
+			echo '<input type="hidden" name="sectionId" value="' . esc_attr ($sid) . '"/>';
+			echo '</form>';
+
+			echo '</div></div>';
 			echo '</li>';
 		}
 
 		echo '</ul>';
-		echo '</form>';
+
+		// Total pendiente de pago
+		if ($this->paymentsEnabled && $totalDueCents > 0)
+		{
+			$totalDueEuros = number_format ($totalDueCents / 100, 2);
+			echo '<div style="margin-top:1rem;padding:1rem;border:1px solid #ccc;background:#f9f9f9;border-radius:8px">';
+			echo '<strong>Total pendiente de pago: ' . esc_html ($totalDueEuros) . ' €</strong>';
+
+			echo '<a class="button" href="' . $payUrl . '" style="margin-right:.5rem">Abonar</a>';
+			echo '</div>';
+		}
 	}
 
 
@@ -484,150 +501,229 @@ class UserPage
 			return;
 		}
 
-		$action = (string) ($_POST ['zg_action'] ?? '');
-		if ($action !== 'subscribe_section' && $action !== 'unsubscribe_section')
+		// Solo aceptar POST reales
+		if (($_SERVER ['REQUEST_METHOD'] ?? '') !== 'POST')
 		{
 			return;
 		}
 
-		$eventId = intval ($_POST ['eventId'] ?? 0);
+		// Usuario debe estar habilitado
+		if (isset ($this->sessionData ['isEnabled']) && ! $this->sessionData ['isEnabled'])
+		{
+			$this->messages [] = [ 'type' => 'error', 'text' => 'Tu usuario no está habilitado para realizar esta acción.'];
+			return;
+		}
+
+		// Normalizar inputs (evita slashes mágicos)
+		$action = (string) ($_POST ['zg_direct_action'] ?? '');
+		$eventId = (int) ($_POST ['eventId'] ?? 0);
 		$sectionId = (string) ($_POST ['sectionId'] ?? '');
 		$nonce = (string) ($_POST ['_zg_nonce'] ?? '');
 
+		// Limpiar/unslash
+		$action = sanitize_key (wp_unslash ($action));
+		$sectionId = sanitize_text_field (wp_unslash ($sectionId));
+		$nonce = wp_unslash ($nonce);
+
+		if ($action !== 'subscribe_section' && $action !== 'unsubscribe_section')
+		{
+			return; // ignorar otras acciones
+		}
+
+		// Validaciones básicas
 		if ($eventId !== (int) $this->event ['id'] || $sectionId === '')
 		{
 			$this->messages [] = [ 'type' => 'error', 'text' => 'Solicitud no válida.'];
 			return;
 		}
 
-		$nonceAction = ($action === 'subscribe_section') ? ('zg_subscribe_' . $eventId . '_' . $sectionId) : ('zg_unsubscribe_' . $eventId . '_' . $sectionId);
-
-		if (! wp_verify_nonce ($nonce, $nonceAction))
+		// Nonce específico por acción
+		$expectedAction = "zg_subscribe_{$eventId}_{$sectionId}";
+		if (! wp_verify_nonce ($nonce, $expectedAction))
 		{
 			$this->messages [] = [ 'type' => 'error', 'text' => 'Token inválido.'];
+			return; // No sigas
+		}
+
+		// --- Autorización de la sección/acción ---
+
+		// ¿existe la sección en este evento?
+		$isStd = isset ($this->sectionsStandard [$sectionId]);
+		$isHidden = isset ($this->sectionsHidden [$sectionId]);
+		if (! $isStd && ! $isHidden)
+		{
+			$this->messages [] = [ 'type' => 'error', 'text' => 'Sección no válida para este evento.'];
 			return;
 		}
 
 		if ($action === 'subscribe_section')
 		{
+			// Si es oculta, solo permitir si las reglas la habilitan para este usuario
+			if ($isHidden)
+			{
+				$allowedHidden = $this->getAllowedHiddenSectionIdsByRules (); // ya implementado
+				if (! in_array ($sectionId, $allowedHidden, true))
+				{
+					$this->messages [] = [ 'type' => 'error', 'text' => 'No tienes acceso a esta sección.'];
+					return;
+				}
+			}
+
+			// Evitar suscripción duplicada
+			if (isset ($this->userSubscriptions [$sectionId]))
+			{
+				$this->messages [] = [ 'type' => 'error', 'text' => 'Ya estás inscrito en esta sección.'];
+				return;
+			}
+
+			// Ejecutar
 			$this->doSubscribe ($eventId, $sectionId);
 		}
 		else
-		{
+		{ // unsubscribe_section
+		  // Debe existir suscripción previa para desuscribir
+			if (! isset ($this->userSubscriptions [$sectionId]))
+			{
+				$this->messages [] = [ 'type' => 'error', 'text' => 'No tienes una reserva en esta sección.'];
+				return;
+			}
+
 			$this->doUnsubscribe ($eventId, $sectionId);
 		}
 
-		// Refrescar datos tras la operación
+		// Refrescar datos tras la operación (estado en memoria para el render)
 		$this->loadAvailability ();
 		$this->loadUserSubscriptions ();
 	}
 
 
-	private function doSubscribe (int $eventId, string $sectionId): void
+	private function doSubscribe (int $eventId, string $sectionId): bool
 	{
 		global $wpdb;
 
-		$email = (string) ($this->sessionData ['userEmail'] ?? '');
-		if ($email === '')
+		$userId = (int) ($this->sessionData ['userId'] ?? 0);
+		if ($userId <= 0)
 		{
-			$this->messages [] = [ 'type' => 'error', 'text' => 'Usuario no identificado.'];
-			return;
+			$this->messages [] = [ 'type' => 'error', 'text' => 'Debes iniciar sesión para suscribirte.'];
+			return false;
 		}
 
-		// Ya suscrito?
-		if (isset ($this->userSubscriptions [$sectionId]))
+		// Localizar la sección en la configuración del evento
+		$section = null;
+		foreach (array_merge ($this->sectionsStandard ?? [ ], $this->sectionsHidden ?? [ ]) as $s)
 		{
-			$this->messages [] = [ 'type' => 'error', 'text' => 'Ya estás inscrito en esta sección.'];
-			return;
+			if ((string) ($s ['id'] ?? '') === (string) $sectionId)
+			{
+				$section = $s;
+				break;
+			}
 		}
-
-		$section = $this->sectionsStandard [$sectionId] ?? $this->sectionsHidden [$sectionId] ?? null;
 		if (! $section)
 		{
-			$this->messages [] = [ 'type' => 'error', 'text' => 'Sección no válida.'];
-			return;
+			$this->messages [] = [ 'type' => 'error', 'text' => 'La sección indicada no existe en este evento.'];
+			return false;
 		}
 
-		$status = ($section ['price'] ?? 0) > 0 ? 'unpaid' : 'confirmed';
+		$tableReservations = $wpdb->prefix . 'zgReservations';
+		$tableCapacity = $wpdb->prefix . 'zgCapacity';
+		$nowSql = 'NOW()';
 
-		// Comprobar disponibilidad precargada
-		$avail = $this->availability [$sectionId] ?? [ 'code' => 'available'];
-		if ($avail ['code'] === 'none')
-		{
-			$this->messages [] = [ 'type' => 'error', 'text' => 'No quedan plazas disponibles.'];
-			return;
-		}
+		$price = (float) ($section ['price'] ?? 0.0);
+		$status = ($price > 0) ? 'pending_payment' : 'confirmed';
+		$payStatus = ($price > 0) ? 'none' : 'succeeded';
+		$amountCt = ($price > 0) ? (int) round ($price * 100) : null;
+		$currency = ($price > 0) ? 'EUR' : null;
+		$confirmSql = ($status === 'confirmed') ? $nowSql : 'NULL';
 
-		// Transacción
+		// Iniciar transacción
 		$wpdb->query ('START TRANSACTION');
 
-		// Bloqueo fila capacidad (o inicializar)
-		$cap = $wpdb->get_row ($wpdb->prepare ("SELECT maxCapacity, usedCapacity
-				   FROM {$wpdb->prefix}zgCapacity
-				  WHERE eventId = %d AND sectionId = %s
-				  FOR UPDATE", $eventId, $sectionId), ARRAY_A);
+		// 1) Bloquear/leer capacidad existente: si no hay fila => bloqueado
+		$capRow = $wpdb->get_row ($wpdb->prepare ("SELECT eventId, sectionId, maxCapacity, usedCapacity
+               FROM {$tableCapacity}
+              WHERE eventId=%d AND sectionId=%s
+              FOR UPDATE", $eventId, $sectionId), ARRAY_A);
 
-		if (! $cap)
+		if (! $capRow)
 		{
-			$maxCap = (int) ($section ['capacity'] ?? 0);
-			$ins = $wpdb->insert ($wpdb->prefix . 'zgCapacity', [ 'eventId' => $eventId, 'sectionId' => $sectionId, 'maxCapacity' => $maxCap, 'usedCapacity' => 0], [ '%d', '%s', '%d', '%d']);
-			if ($ins === false)
-			{
-				$wpdb->query ('ROLLBACK');
-				$this->messages [] = [ 'type' => 'error', 'text' => 'No se pudo inicializar la capacidad.'];
-				return;
-			}
-			$cap = [ 'maxCapacity' => $maxCap, 'usedCapacity' => 0];
+			// No existe fila de capacidad => inscripciones bloqueadas
+			$wpdb->query ('ROLLBACK');
+			$this->messages [] = [ 'type' => 'error', 'text' => 'Las inscripciones para esta sección están temporalmente bloqueadas.'];
+			return false;
 		}
 
-		$max = (int) $cap ['maxCapacity'];
-		$used = (int) $cap ['usedCapacity'];
+		$maxCap = (int) $capRow ['maxCapacity']; // 0 = ilimitado
+		$usedCap = (int) $capRow ['usedCapacity'];
 
-		// Incremento condicional
-		if ($max === 0)
+		// 2) Evitar duplicados: si ya tiene reserva activa (no cancelada/expirada), salir en verde
+		$existing = $wpdb->get_row ($wpdb->prepare ("SELECT id, status
+               FROM {$tableReservations}
+              WHERE userId=%d AND eventId=%d AND sectionId=%s
+              LIMIT 1", $userId, $eventId, $sectionId), ARRAY_A);
+
+		if ($existing && ! in_array ($existing ['status'], [ 'cancelled', 'expired'], true))
 		{
-			$ok = $wpdb->update ($wpdb->prefix . 'zgCapacity', [ 'usedCapacity' => $used + 1], [ 'eventId' => $eventId, 'sectionId' => $sectionId], [ '%d'], [ '%d', '%s']);
-			if ($ok === false)
+			$wpdb->query ('ROLLBACK');
+			$this->messages [] = [ 'type' => 'success', 'text' => 'Ya estabas suscrito a esta sección.'];
+			return true;
+		}
+
+		// 3) Comprobar espacio
+		$hasSpace = ($maxCap === 0) || ($usedCap < $maxCap);
+		if (! $hasSpace)
+		{
+			$wpdb->query ('ROLLBACK');
+			$this->messages [] = [ 'type' => 'error', 'text' => 'No quedan plazas disponibles en esta sección.'];
+			return false;
+		}
+
+		// 4) Incrementar capacidad usada
+		$inc = $wpdb->query ($wpdb->prepare ("UPDATE {$tableCapacity}
+                SET usedCapacity = usedCapacity + 1
+              WHERE eventId=%d AND sectionId=%s", $eventId, $sectionId));
+		if ($inc === false)
+		{
+			$wpdb->query ('ROLLBACK');
+			$this->messages [] = [ 'type' => 'error', 'text' => 'No se pudo actualizar la capacidad.'];
+			return false;
+		}
+
+		// 5) Insertar reserva
+		$sql = "INSERT INTO {$tableReservations}
+            (userId, eventId, sectionId, status, paymentStatus, amountCents, currency, confirmedAt, createdAt, updatedAt)
+            VALUES (%d, %d, %s, %s, %s, %s, %s, {$confirmSql}, {$nowSql}, {$nowSql})";
+
+		$ok = $wpdb->query ($wpdb->prepare ($sql, $userId, $eventId, $sectionId, $status, $payStatus, $amountCt, $currency));
+
+		if ($ok === false)
+		{
+			$wpdb->query ('ROLLBACK');
+
+			$msg = 'No se pudo crear la reserva.';
+			if ($wpdb->last_error)
 			{
-				$wpdb->query ('ROLLBACK');
-				$this->messages [] = [ 'type' => 'error', 'text' => 'Error al asignar plaza.'];
-				return;
+				if (stripos ($wpdb->last_error, 'duplicate') !== false || stripos ($wpdb->last_error, 'uq_reservation') !== false)
+				{
+					$msg = 'Ya existe una reserva para este usuario en esta sección.';
+				}
 			}
+			$this->messages [] = [ 'type' => 'error', 'text' => $msg];
+			return false;
+		}
+
+		// 6) Commit y mensaje
+		$wpdb->query ('COMMIT');
+
+		if ($status === 'confirmed')
+		{
+			$this->messages [] = [ 'type' => 'success', 'text' => 'Te has inscrito correctamente.'];
 		}
 		else
 		{
-			$ok = $wpdb->query ($wpdb->prepare ("UPDATE {$wpdb->prefix}zgCapacity
-					    SET usedCapacity = usedCapacity + 1
-					  WHERE eventId = %d AND sectionId = %s
-					    AND usedCapacity < maxCapacity", $eventId, $sectionId));
-			if ($ok === false)
-			{
-				$wpdb->query ('ROLLBACK');
-				$this->messages [] = [ 'type' => 'error', 'text' => 'Error al asignar plaza.'];
-				return;
-			}
-			if ($ok === 0)
-			{
-				$wpdb->query ('ROLLBACK');
-				$this->messages [] = [ 'type' => 'error', 'text' => 'No quedan plazas disponibles.'];
-				return;
-			}
+			$this->messages [] = [ 'type' => 'success', 'text' => 'Plaza reservada. Completa el pago para confirmar tu inscripción.'];
 		}
 
-		// Insert reserva
-		$insRes = $wpdb->insert ($wpdb->prefix . 'zgReservations', [ 'userEmail' => $email, 'eventId' => $eventId, 'sectionId' => $sectionId, 'status' => $status, 'createdAt' => current_time ('mysql', true)], [ '%s', '%d', '%s', '%s', '%s']);
-		if ($insRes === false)
-		{
-			$wpdb->query ('ROLLBACK');
-			$this->messages [] = [ 'type' => 'error', 'text' => 'No se pudo crear la reserva.'];
-			return;
-		}
-
-		$wpdb->query ('COMMIT');
-
-		$label = (string) ($section ['label'] ?? ('Sección ' . $sectionId));
-		$msg = ($status === 'confirmed') ? "Reserva confirmada en «{$label}»." : "Reserva registrada en «{$label}». Pendiente de pago.";
-		$this->messages [] = [ 'type' => 'success', 'text' => $msg];
+		return true;
 	}
 
 

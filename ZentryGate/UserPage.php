@@ -36,6 +36,11 @@ namespace ZentryGate;
  * - Borra reserva
  * - Decrementa usedCapacity si hay fila
  * - Mensaje éxito/error
+ *
+ * Cosas pendientes (You Aren't Gonna Need It):
+ * - Soportar más estados de reserva (espera, cancelada, expirada)
+ * - Al cancelar una reserva pagada, emitir reembolso (parcial o total)
+ * - Al cancelar una sección, cancelar en cascada las que dependen de ella por reglas
  */
 class UserPage
 {

@@ -279,13 +279,8 @@ class Events
 	 */
 	protected function renderEventDetailsPage (int $eventId): void
 	{
-		echo '<h2>Detalle del evento</h2>';
-		if ($eventId <= 0)
-		{
-			echo '<p>No se ha indicado un evento.</p>';
-			return;
-		}
-		echo '<p>Aquí iría la gestión detallada (aforos, secciones, reglas, reservas...).</p>';
+		// TODO: migrar a POO
+		zg_render_event_details_page ($eventId);
 	}
 
 

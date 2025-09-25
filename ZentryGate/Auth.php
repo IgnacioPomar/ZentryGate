@@ -377,6 +377,12 @@ class Auth
 	/**
 	 * Check if the user is still enabled and load user data.
 	 */
+	private static function fillUserData (array $user): void
+	{
+		self::$userData = [ 'name' => $user ['name'], 'userId' => $user ['id'], 'email' => $user ['email'], 'isAdmin' => (bool) $user ['isAdmin'], 'isEnabled' => (bool) $user ['isEnabled'], 'lastLogin' => current_time ('mysql')];
+	}
+
+
 	private static function checkUserStillEnabled (string $email): void
 	{
 		global $wpdb;
@@ -384,7 +390,8 @@ class Auth
 
 		if ($user && $user ['isEnabled'])
 		{
-			self::$userData = [ 'name' => $user ['name'], 'isAdmin' => (bool) $user ['isAdmin'], 'isEnabled' => (bool) $user ['isEnabled'], 'lastLogin' => current_time ('mysql')];
+			// User is enabled, fill user data
+			self::fillUserData ($user);
 		}
 		else
 		{
@@ -414,7 +421,7 @@ class Auth
 			return false;
 		}
 
-		self::$userData = [ 'name' => $user ['name'], 'isAdmin' => (bool) $user ['isAdmin'], 'isEnabled' => (bool) $user ['isEnabled'], 'lastLogin' => current_time ('mysql')];
+		self::fillUserData ($user);
 
 		return self::$userData ['isEnabled'] ?? false;
 	}

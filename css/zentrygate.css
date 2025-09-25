@@ -3,7 +3,7 @@
 /* Contenedor general de los formularios */
 .zg-notice, .zg-cookie-form, .zg-user-page,
 .zg-register-form, .zg-login-form {
-  max-width: 400px;
+  max-width: 500px;
   margin: 2em auto;
   background: #ffffff;
   border: 1px solid #e1e1e1;
@@ -14,6 +14,9 @@
 }
 
 .zg-notice.zg-notice-error { border: 2px solid #f00; background: #ffcaca;}
+.zg-notice.zg-notice-success { border: 2px solid #0f0; background: rgb(228, 243, 214);}
+.zg-notice.zg-notice-info { border: 2px solid #00f; background: rgb(199, 241, 254);}
+.zg-notice.zg-notice-warn { border: 2px solid rgb(255, 255, 0); background: rgb(250, 248, 203);}
 
 /* Header */
 .zg-form-header {

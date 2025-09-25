@@ -42,12 +42,13 @@ class UserPage
 	private array $sessionData;
 
 	// Config
-	private bool $paymentsEnabled = false;
+	private bool $paymentsEnabled = TRUE;
 
 	// Evento y datos cargados en constructor
 	private ?array $event = null; // ['id','name','date']
 	private array $sectionsStandard = [ ]; // [sectionId => sectionData+availability]
 	private array $sectionsHidden = [ ]; // [sectionId => sectionData+availability]
+	private array $sectionsAll = [ ]; // merge of the above two
 	private array $rules = [ ]; // reglas crudas tal cual JSON
 	private array $availability = [ ]; // [sectionId => ['code'=>'available|few|none','spots'=>int|null,'text'=>string]]
 
@@ -96,7 +97,7 @@ class UserPage
 		// 3.1) Si no hay evento, mensaje único
 		if (! $this->event)
 		{
-			echo '<div class="notice notice-info"><p>No está abierta la inscripción a ningún evento</p></div>';
+			echo '<div class="zg-notice zg-notice-info"><p>No está abierta la inscripción a ningún evento</p></div>';
 			return;
 		}
 
@@ -187,6 +188,7 @@ class UserPage
 			{
 				$this->sectionsStandard [$sid] = $data;
 			}
+			$this->sectionsAll [$sid] = $data;
 		}
 	}
 
@@ -198,14 +200,12 @@ class UserPage
 
 		$evId = (int) $this->event ['id'];
 
-		// Tomamos todos los sectionIds conocidos (estándar + ocultos)
-		$allSections = $this->sectionsStandard + $this->sectionsHidden;
-		if (empty ($allSections))
+		if (empty ($this->sectionsAll))
 		{
 			return;
 		}
 
-		$ids = array_map ('strval', array_keys ($allSections));
+		$ids = array_map ('strval', array_keys ($this->sectionsAll));
 		$in = implode ("','", array_map ('esc_sql', $ids));
 
 		$capRows = $wpdb->get_results ($wpdb->prepare ("SELECT sectionId, maxCapacity, usedCapacity
@@ -219,7 +219,7 @@ class UserPage
 			$capMap [(string) $r ['sectionId']] = [ 'max' => (int) $r ['maxCapacity'], 'used' => (int) $r ['usedCapacity']];
 		}
 
-		foreach ($allSections as $sid => $s)
+		foreach ($this->sectionsAll as $sid => $s)
 		{
 			$max = isset ($capMap [$sid]) ? $capMap [$sid] ['max'] : (int) $s ['capacity'];
 			$used = isset ($capMap [$sid]) ? $capMap [$sid] ['used'] : 0;
@@ -253,29 +253,94 @@ class UserPage
 	}
 
 
+	/**
+	 * Carga en $this->userSubscriptions las reservas del usuario para el evento actual.
+	 * - Requiere $this->event['id'] y $this->sessionData['userId'].
+	 * - Indexa por sectionId.
+	 * - Marca isActive si status NO es cancelled/expired.
+	 * - Incluye campos relevantes para UI (payment, fechas, etc.).
+	 */
 	private function loadUserSubscriptions (): void
 	{
 		global $wpdb;
+
 		$this->userSubscriptions = [ ];
 
-		$email = (string) ($this->sessionData ['userEmail'] ?? '');
-		if ($email === '' || ! $this->event)
+		$eventId = isset ($this->event ['id']) ? (int) $this->event ['id'] : 0;
+		$userId = (int) ($this->sessionData ['userId'] ?? 0);
+
+		if ($eventId <= 0 || $userId <= 0)
 		{
 			return;
 		}
 
-		$evId = (int) $this->event ['id'];
+		$tableReservations = $wpdb->prefix . 'zgReservations';
 
-		$rows = $wpdb->get_results ($wpdb->prepare ("SELECT id, sectionId, status
-				   FROM {$wpdb->prefix}zgReservations
-				  WHERE userEmail = %s AND eventId = %d", $email, $evId), ARRAY_A) ?? [ ];
+		// Trae todas las reservas del usuario en el evento.
+		// La UNIQUE (eventId, sectionId, userId) garantiza como mucho 1 fila activa por sección,
+		// pero por seguridad ordenamos por updatedAt/createdAt para quedarnos con la más reciente si hubiera históricos.
+		$rows = $wpdb->get_results ($wpdb->prepare ("SELECT id, userId, eventId, sectionId, status, paymentStatus,
+                    amountCents, currency, paymentIntentId, latestChargeId,
+                    refundedCents, receiptUrl, stripePayload,
+                    waitlistPosition, expiresAt, confirmedAt, cancelledAt, checkedInAt,
+                    attendanceStatus, createdAt, updatedAt
+               FROM {$tableReservations}
+              WHERE userId = %d AND eventId = %d
+              ORDER BY updatedAt DESC, createdAt DESC", $userId, $eventId), ARRAY_A);
+
+		if (empty ($rows))
+		{
+			return;
+		}
+
+		// Mapa de secciones conocidas por id (para adjuntar meta útil como label/price)
+		$sections = [ ];
+		foreach ($this->sectionsAll as $s)
+		{
+			$sid = (string) ($s ['id'] ?? '');
+			if ($sid !== '')
+			{
+				$sections [$sid] = $s;
+			}
+		}
+
+		$bySection = [ ];
 
 		foreach ($rows as $r)
 		{
 			$sid = (string) $r ['sectionId'];
+			// Si ya tenemos esa sección, mantenemos la primera (la más reciente por el ORDER BY).
+			if (isset ($bySection [$sid]))
+			{
+				continue;
+			}
+
 			$status = (string) $r ['status'];
-			$this->userSubscriptions [$sid] = [ 'reservationId' => (int) $r ['id'], 'status' => $status, 'needsPayment' => ($status === 'pending_payment')];
+			$isActive = ! in_array ($status, [ 'cancelled', 'expired'], true);
+
+			$sectionMeta = $sections [$sid] ?? null;
+			$label = $sectionMeta ['label'] ?? null;
+			$price = isset ($sectionMeta ['price']) ? (float) $sectionMeta ['price'] : null;
+			$hidden = isset ($sectionMeta ['isHidden']) ? (bool) $sectionMeta ['isHidden'] : null;
+
+			// Derivados útiles para la UI
+			$requiresPayment = ($status === 'pending_payment' && ($r ['paymentStatus'] ?? 'none') === 'none');
+			$canUnsubscribe = $isActive && in_array ($status, [ 'held', 'pending_payment', 'confirmed', 'waiting_list'], true);
+
+			$bySection [$sid] = [ 'reservationId' => (int) $r ['id'], 'sectionId' => $sid, 'eventId' => (int) $r ['eventId'], 'status' => $status, 'paymentStatus' => (string) $r ['paymentStatus'], 'amountCents' => isset ($r ['amountCents']) ? (int) $r ['amountCents'] : null,
+					'currency' => $r ['currency'] ?? null, 'paymentIntentId' => $r ['paymentIntentId'] ?? null, 'latestChargeId' => $r ['latestChargeId'] ?? null, 'refundedCents' => isset ($r ['refundedCents']) ? (int) $r ['refundedCents'] : null, 'receiptUrl' => $r ['receiptUrl'] ?? null,
+					'stripePayload' => $r ['stripePayload'] ?? null, // JSON (string)
+					'waitlistPosition' => isset ($r ['waitlistPosition']) ? (int) $r ['waitlistPosition'] : null, 'expiresAt' => $r ['expiresAt'] ?? null, 'confirmedAt' => $r ['confirmedAt'] ?? null, 'cancelledAt' => $r ['cancelledAt'] ?? null, 'checkedInAt' => $r ['checkedInAt'] ?? null,
+					'attendanceStatus' => $r ['attendanceStatus'] ?? 'none', 'createdAt' => $r ['createdAt'] ?? null, 'updatedAt' => $r ['updatedAt'] ?? null, 
+
+					// Ayudas para la vista
+					'isActive' => $isActive, 'requiresPayment' => $requiresPayment, 'canUnsubscribe' => $canUnsubscribe, 
+
+					// Meta de la sección (si existe en el evento)
+					'sectionLabel' => $label, 'sectionPrice' => $price, 'sectionIsHidden' => $hidden];
 		}
+
+		$this->userSubscriptions = $bySection;
 	}
 
 
@@ -288,8 +353,8 @@ class UserPage
 	{
 		foreach ($this->messages as $m)
 		{
-			$cls = $m ['type'] === 'error' ? 'notice-error' : 'notice-success';
-			echo '<div class="notice ' . esc_attr ($cls) . '"><p>' . esc_html ($m ['text']) . '</p></div>';
+			$cls = $m ['type'] === 'error' ? 'zg-notice-error' : 'zg-notice-success';
+			echo '<div class="zg-notice ' . esc_attr ($cls) . '">' . esc_html ($m ['text']) . '</div>';
 		}
 	}
 
@@ -337,11 +402,13 @@ class UserPage
 
 			if ($isSubscribed)
 			{
-				// Estado suscripción
-				$status = $sub ['status'];
-				$needsPayment = $sub ['needsPayment'];
+				// YAGNI: soportar e infomar del resto de estados
 
-				echo '<span style="margin-right:1rem">Estado: ' . esc_html ($status) . ($needsPayment ? ' (pendiente)' : ' (abonado)') . '</span>';
+				$needsPayment = $sub ['requiresPayment'];
+
+				$estadoTxt = $needsPayment ? ' (pendiente de pago)' : ($this->sectionsAll [$sid] ['price'] > 0 ? ' (abonado)' : '(Suscrito)');
+
+				echo '<span style="margin-right:1rem"> ' . $estadoTxt . '</span>';
 
 				// Enlace de pago si pendiente y habilitado
 				if ($needsPayment)
@@ -610,7 +677,7 @@ class UserPage
 
 		// Localizar la sección en la configuración del evento
 		$section = null;
-		foreach (array_merge ($this->sectionsStandard ?? [ ], $this->sectionsHidden ?? [ ]) as $s)
+		foreach ($this->sectionsAll as $s)
 		{
 			if ((string) ($s ['id'] ?? '') === (string) $sectionId)
 			{
@@ -727,54 +794,69 @@ class UserPage
 	}
 
 
-	private function doUnsubscribe (int $eventId, string $sectionId): void
+	private function doUnsubscribe (int $eventId, string $sectionId): bool
 	{
 		global $wpdb;
 
-		$email = (string) ($this->sessionData ['userEmail'] ?? '');
-		if ($email === '')
+		$userId = (int) ($this->sessionData ['userId'] ?? 0);
+		if ($userId <= 0)
 		{
-			$this->messages [] = [ 'type' => 'error', 'text' => 'Usuario no identificado.'];
-			return;
+			$this->messages [] = [ 'type' => 'error', 'text' => 'Debes iniciar sesión para darte de baja.'];
+			return false;
 		}
 
-		// Debe existir la reserva
-		$res = $wpdb->get_row ($wpdb->prepare ("SELECT id, status FROM {$wpdb->prefix}zgReservations
-				  WHERE userEmail=%s AND eventId=%d AND sectionId=%s
-				  FOR UPDATE", $email, $eventId, $sectionId), ARRAY_A);
+		$tableReservations = $wpdb->prefix . 'zgReservations';
+		$tableCapacity = $wpdb->prefix . 'zgCapacity';
 
-		if (! $res)
-		{
-			$this->messages [] = [ 'type' => 'error', 'text' => 'No tienes una reserva en esta sección.'];
-			return;
-		}
-
-		// Transacción
+		// Inicia transacción
 		$wpdb->query ('START TRANSACTION');
 
-		// Borrar reserva
-		$del = $wpdb->delete ($wpdb->prefix . 'zgReservations', [ 'id' => (int) $res ['id']], [ '%d']);
-		if ($del === false)
+		// Bloquear la reserva del usuario para este evento/sección
+		$reservation = $wpdb->get_row ($wpdb->prepare ("SELECT id, status
+               FROM {$tableReservations}
+              WHERE userId=%d AND eventId=%d AND sectionId=%s
+              FOR UPDATE", $userId, $eventId, $sectionId), ARRAY_A);
+
+		if (! $reservation)
 		{
 			$wpdb->query ('ROLLBACK');
-			$this->messages [] = [ 'type' => 'error', 'text' => 'No se pudo eliminar la reserva.'];
-			return;
+			$this->messages [] = [ 'type' => 'error', 'text' => 'No se encontró una suscripción para cancelar.'];
+			return false;
 		}
 
-		// Decrementar usedCapacity si hay fila
-		$ok = $wpdb->query ($wpdb->prepare ("UPDATE {$wpdb->prefix}zgCapacity
-				    SET usedCapacity = CASE WHEN usedCapacity>0 THEN usedCapacity-1 ELSE 0 END
-				  WHERE eventId = %d AND sectionId = %s", $eventId, $sectionId));
-		if ($ok === false)
+		$statusBefore = (string) $reservation ['status'];
+		$consumedCapacity = in_array ($statusBefore, [ 'confirmed', 'pending_payment', 'held'], true);
+
+		// Borrado duro de la reserva
+		$deleted = $wpdb->query ($wpdb->prepare ("DELETE FROM {$tableReservations} WHERE id=%d", (int) $reservation ['id']));
+
+		if ($deleted === false)
 		{
 			$wpdb->query ('ROLLBACK');
-			$this->messages [] = [ 'type' => 'error', 'text' => 'No se pudo actualizar la capacidad.'];
-			return;
+			$this->messages [] = [ 'type' => 'error', 'text' => 'No se pudo eliminar la suscripción.'];
+			return false;
 		}
 
+		// Si consumía plaza, liberar capacidad (si no existe fila de capacidad, no se considera error)
+		if ($consumedCapacity)
+		{
+			$capUpdated = $wpdb->query ($wpdb->prepare ("UPDATE {$tableCapacity}
+                    SET usedCapacity = GREATEST(usedCapacity - 1, 0)
+                  WHERE eventId=%d AND sectionId=%s", $eventId, $sectionId));
+
+			if ($capUpdated === false)
+			{
+				$wpdb->query ('ROLLBACK');
+				$this->messages [] = [ 'type' => 'error', 'text' => 'No se pudo actualizar la capacidad.'];
+				return false;
+			}
+		}
+
+		// Confirmar transacción
 		$wpdb->query ('COMMIT');
 
-		$this->messages [] = [ 'type' => 'success', 'text' => 'Te has desuscrito correctamente.'];
+		$this->messages [] = [ 'type' => 'success', 'text' => 'Tu suscripción ha sido eliminada correctamente.'];
+		return true;
 	}
 
 	/*

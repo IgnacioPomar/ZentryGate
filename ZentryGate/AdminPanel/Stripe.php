@@ -19,14 +19,15 @@ class Stripe
 		{
 			$publishable = sanitize_text_field ($_POST ['zg_stripe_publishable'] ?? '');
 			$secret = sanitize_text_field ($_POST ['zg_stripe_secret'] ?? '');
+			$webhookSecret = sanitize_text_field ($_POST ['zg_stripe_webhook_secret'] ?? '');
 
-			update_option (self::$optionKey, [ 'publishable' => $publishable, 'secret' => $secret]);
+			update_option (self::$optionKey, [ 'publishable' => $publishable, 'secret' => $secret, 'zg_stripe_webhook_secret' => $webhookSecret]);
 
 			echo '<div class="updated"><p>Datos de Stripe guardados correctamente.</p></div>';
 		}
 
 		// Obtener valores actuales
-		$values = get_option (self::$optionKey, [ 'publishable' => '', 'secret' => '']);
+		$values = get_option (self::$optionKey, [ 'publishable' => '', 'secret' => '', 'zg_stripe_webhook_secret' => '']);
 
 		self::checkDependecncies ();
 
@@ -56,13 +57,23 @@ class Stripe
                         <th scope="row"><label for="zg_stripe_secret">Clave secreta</label></th>
                         <td>
                             <input type="password" name="zg_stripe_secret" id="zg_stripe_secret"
-                                   value="<?php
-
-		echo esc_attr ($values ['secret']);
-		?>"
+                                   value="<?=esc_attr ($values ['secret']);?>"
                                    class="regular-text" />
                         </td>
                     </tr>
+                    
+                    
+                    <tr>
+                        <th scope="row"><label for="zg_stripe_webhook_secret">Clave webhook</label></th>
+                        <td>
+                            <input type="password" name="zg_stripe_webhook_secret" id="zg_stripe_webhook_secret"
+                                   
+                                   value="<?=esc_attr ($values ['zg_stripe_webhook_secret']);?>"
+                                   
+                                   class="regular-text" />
+                        </td>
+                    </tr>
+                    
                 </table>
 
                 <?php

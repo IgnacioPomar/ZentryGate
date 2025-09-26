@@ -234,7 +234,6 @@ class UserPage
 		// Concepto: concatenación de etiquetas de secciones
 		$concepto = implode (' + ', $conceptParts);
 
-		/
 		$metaPayload = [ 'userId' => (string) $userId, 'items' => $itemsMeta];
 
 		// URLs de retorno

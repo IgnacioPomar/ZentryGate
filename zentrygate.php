@@ -42,6 +42,7 @@ require_once ZENTRYGATE_DIR . 'ZentryGate/AdministratorPage.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/UserPage.php';
 
 require_once ZENTRYGATE_DIR . 'ZentryGate/Payments/StripeCheckout.php';
+require_once ZENTRYGATE_DIR . 'ZentryGate/Payments/StripeWebhook.php';
 
 // Activation hook
 register_activation_hook (__FILE__, [ \ZentryGate\Install::class, 'activate']);

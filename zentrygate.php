@@ -22,19 +22,26 @@ if (! defined ('ZENTRYGATE_DIR'))
 
 // TODO: Migrar a POO
 // TODO: cambio de contraseña del admin panel separarlo del panel de usuario estandar
-require_once ZENTRYGATE_DIR . 'admin/eventDetails.php';
 
-require_once ZENTRYGATE_DIR . 'ZentryGate/WpAdminPanel.php';
-require_once ZENTRYGATE_DIR . 'ZentryGate/AdminPanel/Dashboard.php';
-require_once ZENTRYGATE_DIR . 'ZentryGate/AdminPanel/Texts.php';
-require_once ZENTRYGATE_DIR . 'ZentryGate/AdminPanel/Users.php';
-require_once ZENTRYGATE_DIR . 'ZentryGate/AdminPanel/Events.php';
-require_once ZENTRYGATE_DIR . 'ZentryGate/Install.php';
+if (is_admin ())
+{
+	require_once ZENTRYGATE_DIR . 'admin/eventDetails.php';
+
+	require_once ZENTRYGATE_DIR . 'ZentryGate/WpAdminPanel.php';
+	require_once ZENTRYGATE_DIR . 'ZentryGate/AdminPanel/Dashboard.php';
+	require_once ZENTRYGATE_DIR . 'ZentryGate/AdminPanel/Texts.php';
+	require_once ZENTRYGATE_DIR . 'ZentryGate/AdminPanel/Users.php';
+	require_once ZENTRYGATE_DIR . 'ZentryGate/AdminPanel/Events.php';
+	require_once ZENTRYGATE_DIR . 'ZentryGate/AdminPanel/Stripe.php';
+	require_once ZENTRYGATE_DIR . 'ZentryGate/Install.php';
+}
 
 require_once ZENTRYGATE_DIR . 'ZentryGate/Plugin.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/Auth.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/AdministratorPage.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/UserPage.php';
+
+require_once ZENTRYGATE_DIR . 'ZentryGate/Payments/StripeCheckout.php';
 
 // Activation hook
 register_activation_hook (__FILE__, [ \ZentryGate\Install::class, 'activate']);

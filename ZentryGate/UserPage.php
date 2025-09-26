@@ -61,7 +61,7 @@ class UserPage
 	private array $userSubscriptions = [ ]; // [sectionId => ['status'=>'confirmed|unpaid','paid'=>bool,'reservationId'=>int]]
 
 	// Flash messages (solo se rellenan en handlePost)
-	private array $messages = [ ];
+	private static array $messages = [ ];
 
 
 	public function __construct (array $sessionData)
@@ -95,6 +95,12 @@ class UserPage
 	 */
 	public function render ()
 	{
+		if (isset ($_GET ['zg-stripe-action']))
+		{
+			$this->renderStripe ();
+			return; // Esto es la gestionde Stripe: no tiene sentido mostrar el resto
+		}
+
 		$name = ' ' . isset ($this->sessionData ['name']) ? sanitize_text_field ($this->sessionData ['name']) : '';
 		echo '<div class="wrap zg-user-page">';
 		echo '<h1>' . esc_html__ ('Gestionando la inscripción de ', 'zentrygate') . $name . '</h1> <div class="zg-user-content">';
@@ -135,6 +141,119 @@ class UserPage
 		}
 
 		echo '</div></div>';
+	}
+
+
+	public function renderStripe (): void
+	{
+		switch ($_GET ['zg-stripe-action'])
+		{
+			case 'success':
+				echo '<div class="zg-notice zg-notice-success"><p>El pago se ha realizado correctamente. Gracias.</p></div>';
+				break;
+			case 'cancel':
+				echo '<div class="zg-notice zg-notice-error"><p>El pago ha sido cancelado. No se ha realizado ningún cargo.</p></div>';
+				break;
+			case 'call-stripe':
+				// HAn pulsado al botón de pagar... si llega aquí es que la redirección a Stripe ha fallado
+				echo '<div class="zg-notice zg-notice-error"><p>Se ha producido un error accediendo a la pasarela de pago.</p>';
+				$this->renderMessages ();
+				echo '</div>';
+				break;
+			default:
+				echo '<div class="zg-notice zg-notice-info"><p>Acción desconocida.</p></div>';
+				break;
+		}
+	}
+
+
+	private function handlerStripePayment (): void
+	{
+
+		// Requisitos básicos
+		if (! $this->event)
+		{
+			self::messages [] = [ 'type' => 'error', 'text' => 'No hay evento seleccionado para procesar el pago.'];
+			return;
+		}
+
+		$eventId = (int) $this->event ['id'];
+		$userId = (int) ($this->sessionData ['userId'] ?? 0);
+		$email = (string) ($this->sessionData ['email'] ?? '');
+
+		if ($userId <= 0)
+		{
+			$this->messages [] = [ 'type' => 'error', 'text' => 'Usuario no identificado.'];
+			return;
+		}
+
+		// Reunir suscripciones pendientes de pago del evento actual
+		// $sectionsToCharge = [ ]; // [{sid, label, price}]
+		$conceptParts = [ ]; // [label1, label2, ...]
+		$itemsMeta = [ ]; // [{eventId, sectionId}]
+		$amountCents = 0;
+
+		foreach ($this->userSubscriptions as $sid => $sub)
+		{
+
+			// Solo consideramos secciones del evento actual (las keys de userSubscriptions ya son sectionId del evento cargado)
+			// y que estén pendientes de pago
+			$needsPayment = ! empty ($sub ['requiresPayment']); // según tu nuevo nombre en el constructor
+			if (! $needsPayment)
+			{
+				continue;
+			}
+
+			// Debe existir la sección y tener precio > 0
+			if (! isset ($this->sectionsAll [$sid]))
+			{
+				continue;
+			}
+			$sec = $this->sectionsAll [$sid];
+			$price = (float) ($sec ['price'] ?? 0.0);
+			if ($price <= 0)
+			{
+				continue;
+			}
+
+			$label = (string) ($sec ['label'] ?? ('Sección ' . $sid));
+
+			// Sumar al total (no hay descuentos de momento)
+			$amountCents += (int) round ($price * 100);
+
+			// Concepto y metadata
+			$conceptParts [] = $label;
+			$itemsMeta [] = [ 'eventId' => (string) $eventId, 'sectionId' => (string) $sid];
+		}
+
+		if ($amountCents <= 0 || empty ($itemsMeta))
+		{
+			$this->messages [] = [ 'type' => 'error', 'text' => 'No tienes importes pendientes de pago en este momento.'];
+			return;
+		}
+
+		// Concepto: concatenación de etiquetas de secciones
+		$concepto = implode (' + ', $conceptParts);
+
+		// Metadata en base64 con JSON { userId, items: [{eventId, sectionId}, ...] }
+		$metaPayload = [ 'userId' => (string) $userId, 'items' => $itemsMeta];
+
+		// URLs de retorno
+		$successUrl = esc_url (add_query_arg ([ 'zg-stripe-action' => 'success'], get_permalink ()));
+		$cancelUrl = esc_url (add_query_arg ([ 'zg-stripe-action' => 'cancel'], get_permalink ()));
+
+		// Llamada a tu helper de Stripe
+		$btn = new \ZentryGate\Payments\StripeCheckout ();
+		$res = $btn->payNow (amountCents: $amountCents, currency: 'EUR', concepto: $concepto, customerEmail: $email, metadata: $metaPayload, successUrl: $successUrl, cancelUrl: $cancelUrl);
+
+		if (! empty ($res ['ok']))
+		{
+			wp_safe_redirect ($res ['url']);
+			exit ();
+		}
+
+		$errorMsg = $res ['error'] ?? 'No se pudo iniciar el proceso de pago.';
+		$this->messages [] = [ 'type' => 'error', 'text' => $errorMsg];
 	}
 
 
@@ -356,7 +475,7 @@ class UserPage
 	 */
 	private function renderMessages (): void
 	{
-		foreach ($this->messages as $m)
+		foreach (self::messages as $m)
 		{
 			$cls = $m ['type'] === 'error' ? 'zg-notice-error' : 'zg-notice-success';
 			echo '<div class="zg-notice ' . esc_attr ($cls) . '">' . esc_html ($m ['text']) . '</div>';
@@ -455,7 +574,7 @@ class UserPage
 			echo '<div style="margin-top:1rem;padding:1rem;border:1px solid #ccc;background:#f9f9f9;border-radius:8px">';
 			echo '<strong>Total pendiente de pago: ' . esc_html ($totalDueEuros) . ' €</strong>';
 
-			echo '<a class="button" href="' . $payUrl . '" style="margin-right:.5rem">Abonar</a>';
+			echo '<a class="button" href="' . esc_url (add_query_arg ([ 'zg-stripe-action' => 'call-stripe'], get_permalink ())) . '" style="margin-right:.5rem">Abonar</a>';
 			echo '</div>';
 		}
 	}
@@ -582,7 +701,7 @@ class UserPage
 		// Usuario debe estar habilitado
 		if (isset ($this->sessionData ['isEnabled']) && ! $this->sessionData ['isEnabled'])
 		{
-			$this->messages [] = [ 'type' => 'error', 'text' => 'Tu usuario no está habilitado para realizar esta acción.'];
+			self::messages [] = [ 'type' => 'error', 'text' => 'Tu usuario no está habilitado para realizar esta acción.'];
 			return;
 		}
 
@@ -676,7 +795,7 @@ class UserPage
 		$userId = (int) ($this->sessionData ['userId'] ?? 0);
 		if ($userId <= 0)
 		{
-			$this->messages [] = [ 'type' => 'error', 'text' => 'Debes iniciar sesión para suscribirte.'];
+			self::messages [] = [ 'type' => 'error', 'text' => 'Debes iniciar sesión para suscribirte.'];
 			return false;
 		}
 
@@ -806,7 +925,7 @@ class UserPage
 		$userId = (int) ($this->sessionData ['userId'] ?? 0);
 		if ($userId <= 0)
 		{
-			$this->messages [] = [ 'type' => 'error', 'text' => 'Debes iniciar sesión para darte de baja.'];
+			self::messages [] = [ 'type' => 'error', 'text' => 'Debes iniciar sesión para darte de baja.'];
 			return false;
 		}
 

@@ -56,10 +56,6 @@ if (! class_exists ('\ZentryGate\Payments\StripeCheckout'))
 
 			// Carga el SDK de Stripe sin Composer.
 			// Ajusta la ruta si tu estructura difiere.
-
-			// var_dump(ZENTRYGATE_DIR . '/vendor/stripe-php/init.php');
-			var_dump ($this->secretKey);
-
 			$sdkPath = ZENTRYGATE_DIR . '/vendor/stripe-php/init.php';
 
 			if (file_exists ($sdkPath))
@@ -173,6 +169,8 @@ if (! class_exists ('\ZentryGate\Payments\StripeCheckout'))
 				$params ['client_reference_id'] = $clientReferenceId;
 			}
 
+			// var_dump ($params); die ();
+
 			try
 			{
 				$session = $this->client->checkout->sessions->create ($params, [ 'idempotency_key' => $idempotencyKey]);
@@ -184,11 +182,8 @@ if (! class_exists ('\ZentryGate\Payments\StripeCheckout'))
 			}
 			catch (\Throwable $e)
 			{
-				if (defined ('WP_DEBUG') && WP_DEBUG)
-				{
-					error_log ('[Stripe] Error creando Checkout Session: ' . $e->getMessage ());
-				}
-				return [ 'ok' => false, 'error' => 'No se pudo iniciar el pago en Stripe. Inténtalo de nuevo en unos minutos.'];
+
+				return [ 'ok' => false, 'error' => 'No se pudo iniciar el pago en Stripe. Inténtalo de nuevo en unos minutos.', 'details' => $e->getMessage ()];
 			}
 		}
 
@@ -208,7 +203,17 @@ if (! class_exists ('\ZentryGate\Payments\StripeCheckout'))
 				// Mantén estable para la misma reserva
 				return 'chk_' . preg_replace ('/[^a-zA-Z0-9_\-]/', '_', (string) $base) . '_' . $hash;
 			}
-			return 'chk_' . $hash;
+			return 'chk_' . $hash . '_4';
+		}
+
+
+		public static function handleStripeRedirects (): void
+		{
+			if (isset ($_GET ['zg-stripe-action']) && $_GET ['zg-stripe-action'] === 'call-stripe' && \ZentryGate\Auth::isLoggedIn ())
+			{
+				$handler = new \ZentryGate\UserPage (\ZentryGate\Auth::getSessionData ());
+				$handler->handlerStripePayment ();
+			}
 		}
 	}
 }

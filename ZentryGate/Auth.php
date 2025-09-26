@@ -36,12 +36,6 @@ class Auth
 		self::loadCookieData ();
 		self::processEarlyActions ();
 		self::$isInitialized = true;
-
-		if (isset ($_GET ['zg-stripe-action']) && $_GET ['zg-stripe-action'] === 'call-stripe' && self::isLoggedIn ())
-		{
-			$handler = new UserPage (self::getSessionData ());
-			$handler->handlerStripePayment ();
-		}
 	}
 
 

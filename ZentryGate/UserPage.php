@@ -149,16 +149,15 @@ class UserPage
 		switch ($_GET ['zg-stripe-action'])
 		{
 			case 'success':
-				echo '<div class="zg-notice zg-notice-success"><p>El pago se ha realizado correctamente. Gracias.</p></div>';
+				echo '<div class="zg-notice zg-notice-success"><p>Estamos procesando tu pago. Gracias.</p></div>';
+				// TODO: comprobar estado real del pago y mostrar detalles
 				break;
 			case 'cancel':
 				echo '<div class="zg-notice zg-notice-error"><p>El pago ha sido cancelado. No se ha realizado ningún cargo.</p></div>';
 				break;
 			case 'call-stripe':
 				// HAn pulsado al botón de pagar... si llega aquí es que la redirección a Stripe ha fallado
-				echo '<div class="zg-notice zg-notice-error"><p>Se ha producido un error accediendo a la pasarela de pago.</p>';
 				$this->renderMessages ();
-				echo '</div>';
 				break;
 			default:
 				echo '<div class="zg-notice zg-notice-info"><p>Acción desconocida.</p></div>';
@@ -167,13 +166,13 @@ class UserPage
 	}
 
 
-	private function handlerStripePayment (): void
+	public function handlerStripePayment (): void
 	{
 
 		// Requisitos básicos
 		if (! $this->event)
 		{
-			self::messages [] = [ 'type' => 'error', 'text' => 'No hay evento seleccionado para procesar el pago.'];
+			self::$messages [] = [ 'type' => 'error', 'text' => 'No hay evento seleccionado para procesar el pago.'];
 			return;
 		}
 
@@ -183,7 +182,7 @@ class UserPage
 
 		if ($userId <= 0)
 		{
-			$this->messages [] = [ 'type' => 'error', 'text' => 'Usuario no identificado.'];
+			self::$messages [] = [ 'type' => 'error', 'text' => 'Usuario no identificado.'];
 			return;
 		}
 
@@ -228,7 +227,7 @@ class UserPage
 
 		if ($amountCents <= 0 || empty ($itemsMeta))
 		{
-			$this->messages [] = [ 'type' => 'error', 'text' => 'No tienes importes pendientes de pago en este momento.'];
+			self::$messages [] = [ 'type' => 'error', 'text' => 'No tienes importes pendientes de pago en este momento.'];
 			return;
 		}
 
@@ -246,14 +245,22 @@ class UserPage
 		$btn = new \ZentryGate\Payments\StripeCheckout ();
 		$res = $btn->payNow (amountCents: $amountCents, currency: 'EUR', concepto: $concepto, customerEmail: $email, metadata: $metaPayload, successUrl: $successUrl, cancelUrl: $cancelUrl);
 
+		// var_dump ($res); die ();
 		if (! empty ($res ['ok']))
 		{
+			add_filter ('allowed_redirect_hosts', function ($hosts)
+			{
+				$hosts [] = 'checkout.stripe.com';
+				$hosts [] = 'stripe.com';
+				return $hosts;
+			});
+
 			wp_safe_redirect ($res ['url']);
 			exit ();
 		}
 
 		$errorMsg = $res ['error'] ?? 'No se pudo iniciar el proceso de pago.';
-		$this->messages [] = [ 'type' => 'error', 'text' => $errorMsg];
+		self::$messages [] = [ 'type' => 'error', 'text' => $errorMsg, 'details' => $res ['details'] ?? ''];
 	}
 
 
@@ -475,10 +482,16 @@ class UserPage
 	 */
 	private function renderMessages (): void
 	{
-		foreach (self::messages as $m)
+		foreach (self::$messages as $m)
 		{
 			$cls = $m ['type'] === 'error' ? 'zg-notice-error' : 'zg-notice-success';
-			echo '<div class="zg-notice ' . esc_attr ($cls) . '">' . esc_html ($m ['text']) . '</div>';
+			echo '<div class="zg-notice ' . esc_attr ($cls) . '">' . esc_html ($m ['text']);
+			if (isset ($m ['details']) && $m ['details'] !== '')
+			{
+				echo '<br/><small>' . esc_html ($m ['details']) . '</small>';
+			}
+
+			echo '</div>';
 		}
 	}
 
@@ -701,7 +714,7 @@ class UserPage
 		// Usuario debe estar habilitado
 		if (isset ($this->sessionData ['isEnabled']) && ! $this->sessionData ['isEnabled'])
 		{
-			self::messages [] = [ 'type' => 'error', 'text' => 'Tu usuario no está habilitado para realizar esta acción.'];
+			self::$messages [] = [ 'type' => 'error', 'text' => 'Tu usuario no está habilitado para realizar esta acción.'];
 			return;
 		}
 
@@ -724,7 +737,7 @@ class UserPage
 		// Validaciones básicas
 		if ($eventId !== (int) $this->event ['id'] || $sectionId === '')
 		{
-			$this->messages [] = [ 'type' => 'error', 'text' => 'Solicitud no válida.'];
+			self::$messages [] = [ 'type' => 'error', 'text' => 'Solicitud no válida.'];
 			return;
 		}
 
@@ -732,7 +745,7 @@ class UserPage
 		$expectedAction = "zg_subscribe_{$eventId}_{$sectionId}";
 		if (! wp_verify_nonce ($nonce, $expectedAction))
 		{
-			$this->messages [] = [ 'type' => 'error', 'text' => 'Token inválido.'];
+			self::$messages [] = [ 'type' => 'error', 'text' => 'Token inválido.'];
 			return; // No sigas
 		}
 
@@ -743,7 +756,7 @@ class UserPage
 		$isHidden = isset ($this->sectionsHidden [$sectionId]);
 		if (! $isStd && ! $isHidden)
 		{
-			$this->messages [] = [ 'type' => 'error', 'text' => 'Sección no válida para este evento.'];
+			self::$messages [] = [ 'type' => 'error', 'text' => 'Sección no válida para este evento.'];
 			return;
 		}
 
@@ -755,7 +768,7 @@ class UserPage
 				$allowedHidden = $this->getAllowedHiddenSectionIdsByRules (); // ya implementado
 				if (! in_array ($sectionId, $allowedHidden, true))
 				{
-					$this->messages [] = [ 'type' => 'error', 'text' => 'No tienes acceso a esta sección.'];
+					self::$messages [] = [ 'type' => 'error', 'text' => 'No tienes acceso a esta sección.'];
 					return;
 				}
 			}
@@ -763,7 +776,7 @@ class UserPage
 			// Evitar suscripción duplicada
 			if (isset ($this->userSubscriptions [$sectionId]))
 			{
-				$this->messages [] = [ 'type' => 'error', 'text' => 'Ya estás inscrito en esta sección.'];
+				self::$messages [] = [ 'type' => 'error', 'text' => 'Ya estás inscrito en esta sección.'];
 				return;
 			}
 
@@ -775,7 +788,7 @@ class UserPage
 		  // Debe existir suscripción previa para desuscribir
 			if (! isset ($this->userSubscriptions [$sectionId]))
 			{
-				$this->messages [] = [ 'type' => 'error', 'text' => 'No tienes una reserva en esta sección.'];
+				self::$messages [] = [ 'type' => 'error', 'text' => 'No tienes una reserva en esta sección.'];
 				return;
 			}
 
@@ -795,7 +808,7 @@ class UserPage
 		$userId = (int) ($this->sessionData ['userId'] ?? 0);
 		if ($userId <= 0)
 		{
-			self::messages [] = [ 'type' => 'error', 'text' => 'Debes iniciar sesión para suscribirte.'];
+			self::$messages [] = [ 'type' => 'error', 'text' => 'Debes iniciar sesión para suscribirte.'];
 			return false;
 		}
 
@@ -811,7 +824,7 @@ class UserPage
 		}
 		if (! $section)
 		{
-			$this->messages [] = [ 'type' => 'error', 'text' => 'La sección indicada no existe en este evento.'];
+			self::$messages [] = [ 'type' => 'error', 'text' => 'La sección indicada no existe en este evento.'];
 			return false;
 		}
 
@@ -839,7 +852,7 @@ class UserPage
 		{
 			// No existe fila de capacidad => inscripciones bloqueadas
 			$wpdb->query ('ROLLBACK');
-			$this->messages [] = [ 'type' => 'error', 'text' => 'Las inscripciones para esta sección están temporalmente bloqueadas.'];
+			self::$messages [] = [ 'type' => 'error', 'text' => 'Las inscripciones para esta sección están temporalmente bloqueadas.'];
 			return false;
 		}
 
@@ -855,7 +868,7 @@ class UserPage
 		if ($existing && ! in_array ($existing ['status'], [ 'cancelled', 'expired'], true))
 		{
 			$wpdb->query ('ROLLBACK');
-			$this->messages [] = [ 'type' => 'success', 'text' => 'Ya estabas suscrito a esta sección.'];
+			self::$messages [] = [ 'type' => 'success', 'text' => 'Ya estabas suscrito a esta sección.'];
 			return true;
 		}
 
@@ -864,7 +877,7 @@ class UserPage
 		if (! $hasSpace)
 		{
 			$wpdb->query ('ROLLBACK');
-			$this->messages [] = [ 'type' => 'error', 'text' => 'No quedan plazas disponibles en esta sección.'];
+			self::$messages [] = [ 'type' => 'error', 'text' => 'No quedan plazas disponibles en esta sección.'];
 			return false;
 		}
 
@@ -875,7 +888,7 @@ class UserPage
 		if ($inc === false)
 		{
 			$wpdb->query ('ROLLBACK');
-			$this->messages [] = [ 'type' => 'error', 'text' => 'No se pudo actualizar la capacidad.'];
+			self::$messages [] = [ 'type' => 'error', 'text' => 'No se pudo actualizar la capacidad.'];
 			return false;
 		}
 
@@ -898,7 +911,7 @@ class UserPage
 					$msg = 'Ya existe una reserva para este usuario en esta sección.';
 				}
 			}
-			$this->messages [] = [ 'type' => 'error', 'text' => $msg];
+			self::$messages [] = [ 'type' => 'error', 'text' => $msg];
 			return false;
 		}
 
@@ -907,11 +920,11 @@ class UserPage
 
 		if ($status === 'confirmed')
 		{
-			$this->messages [] = [ 'type' => 'success', 'text' => 'Te has inscrito correctamente.'];
+			self::$messages [] = [ 'type' => 'success', 'text' => 'Te has inscrito correctamente.'];
 		}
 		else
 		{
-			$this->messages [] = [ 'type' => 'success', 'text' => 'Plaza reservada. Completa el pago para confirmar tu inscripción.'];
+			self::$messages [] = [ 'type' => 'success', 'text' => 'Plaza reservada. Completa el pago para confirmar tu inscripción.'];
 		}
 
 		return true;
@@ -925,7 +938,7 @@ class UserPage
 		$userId = (int) ($this->sessionData ['userId'] ?? 0);
 		if ($userId <= 0)
 		{
-			self::messages [] = [ 'type' => 'error', 'text' => 'Debes iniciar sesión para darte de baja.'];
+			self::$messages [] = [ 'type' => 'error', 'text' => 'Debes iniciar sesión para darte de baja.'];
 			return false;
 		}
 
@@ -944,7 +957,7 @@ class UserPage
 		if (! $reservation)
 		{
 			$wpdb->query ('ROLLBACK');
-			$this->messages [] = [ 'type' => 'error', 'text' => 'No se encontró una suscripción para cancelar.'];
+			self::$messages [] = [ 'type' => 'error', 'text' => 'No se encontró una suscripción para cancelar.'];
 			return false;
 		}
 
@@ -957,7 +970,7 @@ class UserPage
 		if ($deleted === false)
 		{
 			$wpdb->query ('ROLLBACK');
-			$this->messages [] = [ 'type' => 'error', 'text' => 'No se pudo eliminar la suscripción.'];
+			self::$messages [] = [ 'type' => 'error', 'text' => 'No se pudo eliminar la suscripción.'];
 			return false;
 		}
 
@@ -971,7 +984,7 @@ class UserPage
 			if ($capUpdated === false)
 			{
 				$wpdb->query ('ROLLBACK');
-				$this->messages [] = [ 'type' => 'error', 'text' => 'No se pudo actualizar la capacidad.'];
+				self::$messages [] = [ 'type' => 'error', 'text' => 'No se pudo actualizar la capacidad.'];
 				return false;
 			}
 		}
@@ -979,7 +992,7 @@ class UserPage
 		// Confirmar transacción
 		$wpdb->query ('COMMIT');
 
-		$this->messages [] = [ 'type' => 'success', 'text' => 'Tu suscripción ha sido eliminada correctamente.'];
+		self::$messages [] = [ 'type' => 'success', 'text' => 'Tu suscripción ha sido eliminada correctamente.'];
 		return true;
 	}
 

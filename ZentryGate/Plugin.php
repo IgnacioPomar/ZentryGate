@@ -16,13 +16,16 @@ class Plugin
 		// Work with cookies and sessions
 		add_action ('init', [ Auth::class, 'init']);
 
+		// Redirects handles (stripe)
+		add_action ('template_redirect', [ Payments\StripeCheckout::class, 'handleStripeRedirects']);
+
 		// Admin menu and settings
 		add_action ('admin_menu', [ WpAdminPanel::class, 'registerMenus']);
 		add_action ('admin_init', [ \ZentryGate\AdminPanel\Texts::class, 'registerFormTextsSettings']);
 		add_action ('admin_post_zg_edit_user', [ \ZentryGate\AdminPanel\Users::class, 'processEditUser']);
-		
-		add_action('admin_post_nopriv_zg_register', [\ZentryGate\Auth::class, 'handleRegisterPostEntryPoint']); // no logados
-		add_action('admin_post_zg_register',        [\ZentryGate\Auth::class, 'handleRegisterPostEntryPoint']); // logados
+
+		add_action ('admin_post_nopriv_zg_register', [ \ZentryGate\Auth::class, 'handleRegisterPostEntryPoint']); // no logados
+		add_action ('admin_post_zg_register', [ \ZentryGate\Auth::class, 'handleRegisterPostEntryPoint']); // logados
 
 		// add plugin style
 		if (! wp_style_is ('zentrygate-styles', 'enqueued'))

@@ -18,6 +18,7 @@ class Plugin
 
 		// Redirects handles (stripe)
 		add_action ('template_redirect', [ Payments\StripeCheckout::class, 'handleStripeRedirects']);
+		\ZentryGate\Payments\StripeWebhook::register ();
 
 		// Admin menu and settings
 		add_action ('admin_menu', [ WpAdminPanel::class, 'registerMenus']);

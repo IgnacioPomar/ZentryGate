@@ -175,10 +175,15 @@ if (! class_exists ('\ZentryGate\Payments\StripeCheckout'))
 			{
 				$session = $this->client->checkout->sessions->create ($params, [ 'idempotency_key' => $idempotencyKey]);
 
-				// Opcional: si quieres recuperar PaymentIntent ahora:
-				// $piId = $session->payment_intent ?? null;
+				add_filter ('allowed_redirect_hosts', function ($hosts)
+				{
+					$hosts [] = 'checkout.stripe.com';
+					$hosts [] = 'stripe.com';
+					return $hosts;
+				});
 
-				return [ 'ok' => true, 'url' => $session->url, 'sessionId' => $session->id];
+				wp_safe_redirect ($session->url);
+				exit ();
 			}
 			catch (\Throwable $e)
 			{
@@ -203,7 +208,7 @@ if (! class_exists ('\ZentryGate\Payments\StripeCheckout'))
 				// Mantén estable para la misma reserva
 				return 'chk_' . preg_replace ('/[^a-zA-Z0-9_\-]/', '_', (string) $base) . '_' . $hash;
 			}
-			return 'chk_' . $hash . '_4';
+			return 'chk_' . $hash;
 		}
 
 

@@ -234,7 +234,7 @@ class UserPage
 		// Concepto: concatenación de etiquetas de secciones
 		$concepto = implode (' + ', $conceptParts);
 
-		// Metadata en base64 con JSON { userId, items: [{eventId, sectionId}, ...] }
+		/
 		$metaPayload = [ 'userId' => (string) $userId, 'items' => $itemsMeta];
 
 		// URLs de retorno
@@ -246,18 +246,6 @@ class UserPage
 		$res = $btn->payNow (amountCents: $amountCents, currency: 'EUR', concepto: $concepto, customerEmail: $email, metadata: $metaPayload, successUrl: $successUrl, cancelUrl: $cancelUrl);
 
 		// var_dump ($res); die ();
-		if (! empty ($res ['ok']))
-		{
-			add_filter ('allowed_redirect_hosts', function ($hosts)
-			{
-				$hosts [] = 'checkout.stripe.com';
-				$hosts [] = 'stripe.com';
-				return $hosts;
-			});
-
-			wp_safe_redirect ($res ['url']);
-			exit ();
-		}
 
 		$errorMsg = $res ['error'] ?? 'No se pudo iniciar el proceso de pago.';
 		self::$messages [] = [ 'type' => 'error', 'text' => $errorMsg, 'details' => $res ['details'] ?? ''];

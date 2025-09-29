@@ -253,6 +253,7 @@ class Auth
 				}
 				else
 				{
+					self::$lastErrors [] = __ ('Usuario inexistente o contraseña no valida.', 'zentrygate');
 					// Login failed, clear session data
 					self::$cookieData = [ 'accepted' => true];
 					self::saveCookieData ();
@@ -359,8 +360,16 @@ class Auth
 	{
 		?>
     <form method="post" class="zg-login-form" aria-labelledby="zg-login-title" action="<?=PLugin::$permalink?>">
-        <?=wp_nonce_field ('zg_login_action', 'zg_login_nonce');?>
+        
         <?php
+
+		if (! empty (self::$lastErrors))
+		{
+			self::renderErrors (self::$lastErrors);
+		}
+
+		wp_nonce_field ('zg_login_action', 'zg_login_nonce');
+
 		$page_id = intval (get_option ('zg_login_form_page'));
 		if ($page_id)
 		{
@@ -403,11 +412,11 @@ class Auth
                 <?=esc_html_e ('Acceder', 'zentrygate');?>
             </button>
             <p class="zg-auth-links">
-                <a class="zg-pass-recovery" href="<?=esc_url (add_query_arg ('zg_action', 'pass_recovery'));?>">
+                <a class="zg-pass-recovery" href="<?=esc_url (add_query_arg ('zg_action', 'pass_recovery', PLugin::$permalink));?>">
                     <?=esc_html_e ('¿Has olvidado tu contraseña?', 'zentrygate');?>
                 </a>
                 &nbsp;·&nbsp;
-                <a class="zg-register" href="<?=esc_url (add_query_arg ('zg_action', 'register'));?>">
+                <a class="zg-register" href="<?=esc_url (add_query_arg ('zg_action', 'register', PLugin::$permalink));?>">
                     <?=esc_html_e ('¿No tienes cuenta? Regístrate', 'zentrygate');?>
                 </a>
             </p>
@@ -817,13 +826,19 @@ class Auth
         <strong id="zg-check-email-title">
             <?php
 
-		esc_html_e ('Registro completado', 'zentrygate');
+		esc_html_e ('Registro guardado', 'zentrygate');
 		?>
         </strong>
         <p>
             <?php
 
-		esc_html_e ('Por favor, revisa tu correo electrónico y haz clic en el enlace de verificación para activar tu cuenta.', 'zentrygate');
+		esc_html_e ('Para completar tu registro, tenemos que validar tu correo electrónico. Haz clic en el enlace de verificación que te hemos enviado por email.', 'zentrygate');
+		?>
+        </p>
+        <p>
+            <?php
+
+		esc_html_e ('Si no lo ves, revisa la carpeta de correo no deseado.', 'zentrygate');
 		?>
         </p>
         
@@ -1044,7 +1059,7 @@ class Auth
     
             
 
-            <h2 id="zg-register-title"><?=esc_html_e ('Crear cuenta', 'zentrygate');?></h2>
+            <h2 id="zg-register-title"><?=esc_html_e ('Introduce tus datos para registrarte', 'zentrygate');?></h2>
 
             <?php
 		$old = [ ];
@@ -1214,7 +1229,7 @@ class Auth
 
             <div class="zg-form-footer">
                 <button type="submit" name="zg_register_submit" class="button button-primary">
-                    <?=esc_html_e ('Crear cuenta', 'zentrygate');?>
+                    <?=esc_html_e ('Enviar', 'zentrygate');?>
                 </button>
 
                 <p class="zg-auth-links">
@@ -1444,7 +1459,7 @@ class Auth
 
 		// Cuerpo HTML sencillo
 		$body = '<p>' . sprintf (__ ('Hola %s,', 'zentrygate'), esc_html ($name)) . '</p>';
-		$body .= '<p>' . esc_html__ ('Gracias por registrarte. Para activar tu cuenta, confirma tu correo haciendo clic en el siguiente enlace:', 'zentrygate') . '</p>';
+		$body .= '<p>' . esc_html__ ('Gracias por registrarte a las jornadas de la abogacía general de la comunidad de Madrid. Para validar tu correo, haz clic en el siguiente enlace:', 'zentrygate') . '</p>';
 		$body .= '<p><a href="' . esc_url ($verifyUrl) . '">' . esc_html ($verifyUrl) . '</a></p>';
 		$body .= '<p>' . esc_html__ ('Si no has solicitado esta cuenta, puedes ignorar este mensaje.', 'zentrygate') . '</p>';
 

@@ -103,7 +103,19 @@ class UserPage
 
 		$name = ' ' . isset ($this->sessionData ['name']) ? sanitize_text_field ($this->sessionData ['name']) : '';
 		echo '<div class="wrap zg-user-page">';
-		echo '<h1>' . esc_html__ ('Gestionando la inscripción de ', 'zentrygate') . $name . '</h1> <div class="zg-user-content">';
+
+		$page_id = intval (get_option ('zg_selection_form_page'));
+		if ($page_id)
+		{
+			$content = apply_filters ('the_content', get_post_field ('post_content', $page_id));
+			$content = str_replace ('%name%', $name, $content);
+			echo $content;
+		}
+		else
+		{
+			echo '<h1>' . esc_html__ ('Gestionando la inscripción de ', 'zentrygate') . $name . '</h1>';
+		}
+		echo '<div class="zg-user-content">';
 
 		// 3.1) Si no hay evento, mensaje único
 		if (! $this->event)

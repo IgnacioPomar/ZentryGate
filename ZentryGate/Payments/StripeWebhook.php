@@ -48,13 +48,13 @@ class StripeWebhook
 			$payload = $request->get_body (); // raw JSON
 			$sig = $request->get_header ('stripe-signature') ?? ''; // $sig = $_SERVER ['HTTP_STRIPE_SIGNATURE'] ?? '';
 			$settings = get_option ('zentrygate_stripe_settings', [ ]);
-			$whSecret = $settings ['webhook_secret'] ?? '';
+			$whSecret = $settings ['zg_stripe_webhook_secret'] ?? '';
 
 			if (! $whSecret)
 			{
 				// Acepta 200 para que Stripe no reintente indefinidamente, pero loguea.
 				if (defined ('WP_DEBUG') && WP_DEBUG) error_log ('[Stripe] Falta webhook_secret en ajustes.');
-				return new \WP_REST_Response ([ 'ok' => true], 200);
+				return new \WP_REST_Response ([ 'ok' => true, 'msg' => 'Falta webhook_secret en ajustes.'], 200);
 			}
 
 			// Verifica firma
@@ -166,7 +166,28 @@ class StripeWebhook
 		$table = $wpdb->prefix . 'zgReservations';
 
 		// Metadata: tú enviaste 'userId' y 'items' (JSON) en payNow()
-		$meta = (array) ($session->metadata ?? [ ]);
+		$meta = [ ];
+		// 1) metadata desde la session
+		if (isset ($session->metadata))
+		{
+			// Si es StripeObject moderno:
+			if ($session->metadata instanceof \Stripe\StripeObject)
+			{
+				$meta = $session->metadata->toArray ();
+				// Si es un stdClass u objeto:
+			}
+			elseif (is_object ($session->metadata))
+			{
+				$meta = json_decode (json_encode ($session->metadata), true) ?: [ ];
+				// Si ya es array:
+			}
+			elseif (is_array ($session->metadata))
+			{
+				$meta = $session->metadata;
+			}
+		}
+
+		// 2) Extraer userId e items (string JSON) desde la session
 		$userId = isset ($meta ['userId']) ? (int) $meta ['userId'] : 0;
 		$items = [ ];
 		if (isset ($meta ['items']))
@@ -196,17 +217,29 @@ class StripeWebhook
 			// UPSERT: si existe la fila (por unique eventId-sectionId-userId) actualizamos; si no, insertamos
 			$exists = (int) $wpdb->get_var ($wpdb->prepare ("SELECT id FROM {$table} WHERE userId=%d AND eventId=%d AND sectionId=%s", $userId, $eventId, $sectionId));
 
-			$data = [ 'userId' => $userId, 'eventId' => $eventId, 'sectionId' => $sectionId, 'status' => 'pending_payment', // Confirmaremos con payment_intent.succeeded
-			'paymentStatus' => 'processing', 'amountCents' => $amountCents ?: null, 'currency' => $currency ?: null, 'paymentIntentId' => $piId ?: null, 'updatedAt' => $now, 'stripePayload' => $payloadJson];
+			$setFinal = [ 'status' => 'confirmed', 'paymentStatus' => 'succeeded', 'amountCents' => $amountCents ?: null, 'currency' => $currency ?: null, 'paymentIntentId' => $piId ?: null, 'updatedAt' => $now, 'stripePayload' => $payloadJson];
+			$wherePending = [ 'userId' => $userId, 'eventId' => $eventId, 'sectionId' => $sectionId, 'paymentStatus' => 'pending_payment'];
 
-			if ($exists)
+			$updated = $wpdb->update ($table, $setFinal, $wherePending, [ '%s', '%s', '%d', '%s', '%s', '%s', '%s'], [ '%d', '%d', '%s', '%s']);
+
+			// 2) Si no estaba en pending_payment:
+			if ($updated === 0)
 			{
-				$wpdb->update ($table, $data, [ 'id' => $exists]);
-			}
-			else
-			{
-				$data ['createdAt'] = $now;
-				$wpdb->insert ($table, $data);
+				if ($exists)
+				{
+					// 2.a) Ya había fila (p. ej., processing/none): actualiza por id (idempotente)
+					$updated2 = $wpdb->update ($table, $setFinal, [ 'id' => $exists], [ '%s', '%s', '%d', '%s', '%s', '%s', '%s'], [ '%d']);
+					if (defined ('WP_DEBUG') && WP_DEBUG) error_log ('[ZG][Stripe] updateById u=' . $userId . ' e=' . $eventId . ' s=' . $sectionId . ' => ' . var_export ($updated2, true) . ' err=' . $wpdb->last_error);
+				}
+				else
+				{
+					// 2.b) No existía fila: crea ya confirmada (caso borde, seguro)
+					$insert = [ 'userId' => $userId, 'eventId' => $eventId, 'sectionId' => $sectionId, 'status' => 'confirmed', 'paymentStatus' => 'succeeded', 'amountCents' => $amountCents ?: null, 'currency' => $currency ?: null, 'paymentIntentId' => $piId ?: null, 'createdAt' => $now,
+							'updatedAt' => $now, 'stripePayload' => $payloadJson];
+					$wpdb->insert ($table, $insert, [ '%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s']);
+
+					if (defined ('WP_DEBUG') && WP_DEBUG) error_log ('[ZG][Stripe] insertFinal u=' . $userId . ' e=' . $eventId . ' s=' . $sectionId . ' => ' . var_export ($wpdb->insert_id, true) . ' err=' . $wpdb->last_error);
+				}
 			}
 		}
 	}

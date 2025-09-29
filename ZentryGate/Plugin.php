@@ -9,6 +9,7 @@ namespace ZentryGate;
  */
 class Plugin
 {
+	public static $permalink = '';
 
 
 	public function __construct ()

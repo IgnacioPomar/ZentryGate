@@ -326,7 +326,7 @@ class Auth
 	{
 		// Asegúrate de llamar a wp_enqueue_style o inline CSS para .zg-cookie-form si lo deseas
 		?>
-    <form method="post" class="zg-cookie-form" aria-labelledby="zg-cookie-title">
+    <form method="post" class="zg-cookie-form" aria-labelledby="zg-cookie-title" action="<?=PLugin::$permalink?>">
         <?php
 
 		wp_nonce_field ('zg_cookie_consent_action', 'zg_cookie_consent_nonce');
@@ -358,7 +358,7 @@ class Auth
 	public static function renderLoginForm (): void
 	{
 		?>
-    <form method="post" class="zg-login-form" aria-labelledby="zg-login-title">
+    <form method="post" class="zg-login-form" aria-labelledby="zg-login-title" action="<?=PLugin::$permalink?>">
         <?=wp_nonce_field ('zg_login_action', 'zg_login_nonce');?>
         <?php
 		$page_id = intval (get_option ('zg_login_form_page'));
@@ -510,7 +510,7 @@ class Auth
 		$token = isset ($_GET ['token']) ? sanitize_text_field (wp_unslash ($_GET ['token'])) : '';
 
 		?>
-    <form method="post" class="zg-recovery-change-password-form" aria-labelledby="zg-change-title">
+    <form method="post" class="zg-recovery-change-password-form" aria-labelledby="zg-change-title" action="<?=PLugin::$permalink?>">
         <?php
 		// Mantener acción y datos en POST
 		printf ('<input type="hidden" name="zg_recover_email" value="%s">', esc_attr ($email));
@@ -651,7 +651,7 @@ class Auth
 	public static function renderRecoveryAskEmailForm (): void
 	{
 		?>
-    <form method="get" class="zg-recovery-ask-email-form" aria-labelledby="zg-recovery-title">
+    <form method="get" class="zg-recovery-ask-email-form" aria-labelledby="zg-recovery-title" action="<?=PLugin::$permalink?>">
     <input type="hidden" name="zg_action" value="pass_recovery">
         <?php
 		// Nonce para seguridad
@@ -935,7 +935,11 @@ class Auth
 			return false;
 		}
 
-		$email = base64_decode (str_pad (strtr ($_COOKIE ['e'], '-_', '+/'), strlen ($_COOKIE ['e']) % 4, '=', STR_PAD_RIGHT));
+		$eParam = isset ($_GET ['e']) ? (string) wp_unslash ($_GET ['e']) : '';
+		$b64 = strtr ($eParam, '-_', '+/');
+		$pad = strlen ($b64) % 4;
+		if ($pad) $b64 .= str_repeat ('=', 4 - $pad);
+		$email = base64_decode ($b64, true);
 
 		$token = sanitize_text_field (wp_unslash ($_GET ['token']));
 

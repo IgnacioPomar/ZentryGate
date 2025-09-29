@@ -553,7 +553,7 @@ class UserPage
 			}
 
 			// Formulario de
-			echo '<form method="post" style="display:inline">';
+			echo '<form method="post" style="display:inline"  action="' . PLugin::$permalink . '">';
 
 			wp_nonce_field ("zg_subscribe_{$this->event ['id']}_" . (string) $section ['id'], '_zg_nonce');
 			echo '<button type="submit" class="button button-primary" name="zg_direct_action" value="' . $buttonValue . '"' . ($allowButton ? '' : ' disabled') . '>' . $buttonText . '</button>';

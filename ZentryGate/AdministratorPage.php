@@ -87,7 +87,7 @@ class AdministratorPage
 		?>
         <div class="zg-box">
             <h2><?=esc_html__ ('Importar usuarios desde archivo', 'zentrygate')?></h2>
-        <form method="post" enctype="multipart/form-data">
+        <form method="post" enctype="multipart/form-data" action="<?=PLugin::$permalink?>">
             <?=wp_nonce_field ('zg_import_action', 'zg_import_nonce', true, false)?>
             <label for="zg_import_file"><?=esc_html__ ('Archivo .txt/.csv (email,nombre,pass):', 'zentrygate')?></label><br>
             <input type="file" id="zg_import_file" name="zg_import_file"  onclick="this.value = null;" accept=".txt,.csv" required>
@@ -189,7 +189,7 @@ class AdministratorPage
 		?>
     <div class="wrap">
         <h1><?=esc_html_e ('Añadir nuevo usuario', 'zentrygate');?></h1>
-        <form method="post" action="">
+        <form method="post"  action="<?=PLugin::$permalink?>">
             <?=wp_nonce_field ('zg_add_user_action', 'zg_add_user_nonce');?>
             <table class="form-table">
                 <tr>
@@ -376,7 +376,7 @@ class AdministratorPage
         <h2><?=esc_html__ ('Gestionar usuarios', 'zentrygate')?></h2>
 
         <!-- Formulario de búsqueda -->
-        <form method="get" class="zg-search-form">
+        <form method="get" class="zg-search-form" action="<?=PLugin::$permalink?>">
             <?php
 
 		foreach ($base_args as $k => $v)
@@ -425,7 +425,7 @@ class AdministratorPage
                         </td>
                         <td>
                             <!-- Deshabilitar -->
-                            <form method="post" style="display:inline">
+                            <form method="post" style="display:inline" action="<?=PLugin::$permalink?>">
                                 <?=wp_nonce_field ('zg_manage_user_action', 'zg_manage_user_nonce', true, false)?>
                                 <input type="hidden" name="zg_disable_email" value="<?=esc_attr ($user->email)?>">
                                 <?php
@@ -490,7 +490,7 @@ class AdministratorPage
 			$email = sanitize_email (wp_unslash ($_GET ['zg_user']));
 			?>
             <h3><?=sprintf (esc_html__ ('Modificar %s', 'zentrygate'), esc_html ($email))?></h3>
-            <form method="post" class="zg-modify-form">
+            <form method="post" class="zg-modify-form" action="<?=PLugin::$permalink?>">
                 <?=wp_nonce_field ('zg_manage_user_action', 'zg_manage_user_nonce', true, false)?>
                 <input type="hidden" name="zg_update_email" value="<?=esc_attr ($email)?>">
                 <p>
@@ -521,7 +521,7 @@ class AdministratorPage
 		?>
         <h2><?=esc_html_e ('Exportar usuarios con reservas', 'zentrygate');?></h2>
         <p><?=esc_html_e ('Desde aquí podrás generar y descargar un CSV con todos los usuarios que tienen reservas activas.', 'zentrygate');?></p>
-        <form method="post">
+        <form method="post" action="<?=PLugin::$permalink?>">
             <?=wp_nonce_field ('zg_export_csv_action', 'zg_export_csv_nonce');?>
             <p>
                 <button type="submit" name="zg_do_export_csv" class="button button-primary">

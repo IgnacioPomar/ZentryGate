@@ -6,6 +6,12 @@ class PageRenderer
 {
 
 
+	public function __construct ($permalink)
+	{
+		PLugin::$permalink = $permalink;
+	}
+
+
 	public function echoHeader ($title = '')
 	{
 		if (empty ($title))

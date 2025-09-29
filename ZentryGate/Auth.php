@@ -7,6 +7,7 @@ namespace ZentryGate;
  */
 class Auth
 {
+	private const LOGON_ON_VALIDATE = TRUE;
 	protected static array $lastErrors = [ ];
 	private static bool $isInitialized = false;
 	private static string $sessionDir;
@@ -974,6 +975,26 @@ class Auth
 		{
 
 			return false;
+		}
+
+		if (Auth::LOGON_ON_VALIDATE)
+		{
+			// Logon automático tras validar
+			self::checkUserStillEnabled ($email);
+			if (self::$userData !== null)
+			{
+				$nonce = bin2hex (random_bytes (16));
+				$fileId = bin2hex (random_bytes (16));
+
+				self::$cookieData = [ 'accepted' => true, 'sessId' => $fileId, 'nonce' => $nonce, 'emailHash' => md5 ($email)];
+				self::saveCookieData ();
+
+				// YAGNI: Improve the security with a session table with multiples sessions per user
+				// Generate the session file
+				$session = [ 'nonce' => $nonce, 'email' => $email];
+				$sessionFile = self::$sessionDir . $fileId . '.json';
+				file_put_contents ($sessionFile, json_encode ($session));
+			}
 		}
 
 		return true;

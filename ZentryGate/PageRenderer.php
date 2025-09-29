@@ -95,7 +95,19 @@ class PageRenderer
 				case 'verify':
 					if (Auth::handleEmailVerification ())
 					{
-						Auth::renderVerificationSuccess ();
+						if (Auth::LOGON_ON_VALIDATE)
+						{
+							$session = Auth::getSessionData ();
+							$pageContentHandler = null;
+
+							$pageContentHandler = $session ['isAdmin'] ? new AdministratorPage ($session) : new UserPage ($session);
+
+							$pageContentHandler->render ();
+						}
+						else
+						{
+							Auth::renderVerificationSuccess ();
+						}
 					}
 					else
 					{

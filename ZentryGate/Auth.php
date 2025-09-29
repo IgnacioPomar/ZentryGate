@@ -148,22 +148,65 @@ class Auth
 	 */
 	private static function loadCookieData (): void
 	{
-		if (! empty ($_COOKIE ['ZentryGate']))
+		self::$cookieData = null;
+
+		$raw = $_COOKIE ['ZentryGate'] ?? '';
+		if ($raw === '')
 		{
-			$decodedCookie = base64_decode (str_pad (strtr ($_COOKIE ['ZentryGate'], '-_', '+/'), strlen ($_COOKIE ['ZentryGate']) % 4, '=', STR_PAD_RIGHT));
-			$data = json_decode ($decodedCookie, true);
-			if (is_array ($data))
-			{
-				self::$cookieData = $data;
-			}
+			return;
+		}
+
+		// Base64url -> base64
+		$b64 = strtr ($raw, '-_', '+/');
+
+		// Añade padding hasta múltiplo de 4
+		$remainder = strlen ($b64) % 4;
+		if ($remainder)
+		{
+			$b64 .= str_repeat ('=', 4 - $remainder);
+		}
+
+		// Decodifica en modo estricto
+		$decoded = base64_decode ($b64, true);
+		if ($decoded === false)
+		{
+			return;
+		}
+
+		// Decodifica JSON
+		$data = json_decode ($decoded, true);
+		if (json_last_error () === JSON_ERROR_NONE && is_array ($data))
+		{
+			self::$cookieData = $data;
 		}
 	}
 
 
 	private static function saveCookieData (): void
 	{
-		$cookieContent = rtrim (strtr (base64_encode (json_encode (self::$cookieData)), '+/', '-_'), '=');
-		setcookie ('ZentryGate', $cookieContent, time () + 365 * 24 * 60 * 60, "/");
+		// Serializa de forma segura
+		$json = json_encode (self::$cookieData, JSON_UNESCAPED_SLASHES);
+		if ($json === false)
+		{
+			// Si algo raro pasa, no intentes setear la cookie
+			return;
+		}
+
+		// base64url (sin padding)
+		$b64 = rtrim (strtr (base64_encode ($json), '+/', '-_'), '=');
+
+		$siteHost = wp_parse_url (home_url (), PHP_URL_HOST);
+
+		$options = [ 'expires' => time () + 365 * 24 * 60 * 60, // 1 año
+		'path' => '/', // raíz del sitio
+		'domain' => $siteHost, // HostOnly; usa 'agj.madrid' si quieres incluir subdominios
+		'secure' => is_ssl (), // true si el sitio está en https
+		'httponly' => true, // no accesible desde JS
+		'samesite' => 'Lax' // navegación desde email/link OK
+		];
+
+		// IMPORTANTE: no debe haberse enviado salida antes de esto
+		setcookie ('ZentryGate', $b64, $options);
 	}
 
 
@@ -349,7 +392,7 @@ class Auth
                     type="password"
                     id="zg_password"
                     name="zg_password"
-                    placeholder="<?=esc_attr_e ('••••••••••', 'zentrygate');?>"
+                    placeholder=""
                     required
                     aria-required="true"
                 >
@@ -491,10 +534,7 @@ class Auth
                     type="password"
                     id="zg_new_password"
                     name="zg_new_password"
-                    placeholder="<?php
-
-		esc_attr_e ('••••••••••', 'zentrygate');
-		?>"
+                    placeholder=""
                     required
                     aria-required="true"
                 >
@@ -509,10 +549,7 @@ class Auth
                     type="password"
                     id="zg_confirm_password"
                     name="zg_confirm_password"
-                    placeholder="<?php
-
-		esc_attr_e ('••••••••••', 'zentrygate');
-		?>"
+                    placeholder=""
                     required
                     aria-required="true"
                 >
@@ -1080,7 +1117,7 @@ class Auth
                         type="password"
                         id="zg_reg_password"
                         name="password"
-                        placeholder="<?=esc_attr_e ('••••••••••', 'zentrygate');?>"
+                        placeholder=""
                         required
                         aria-required="true"
                         autocomplete="new-password"
@@ -1092,7 +1129,7 @@ class Auth
                         type="password"
                         id="zg_reg_password2"
                         name="password2"
-                        placeholder="<?=esc_attr_e ('••••••••••', 'zentrygate');?>"
+                        placeholder=""
                         required
                         aria-required="true"
                         autocomplete="new-password"

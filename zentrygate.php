@@ -3,7 +3,7 @@
  * Plugin Name: ZentryGate
  * Plugin URI: https://github.com/IgnacioPomar/ZentryGate
  * Description: Plugin para la gestión de eventos con control de aforo.
- * Version: 1.1.1
+ * Version: 1.2.1
  * Author: Ignacio Pomar Ballestero
  * Author URI: https://github.com/IgnacioPomar
  * License: GPL2
@@ -11,8 +11,8 @@
 defined ('ABSPATH') || exit ();
 
 // Plugin version defines. Renaneber change also the comments above.
-define ('ZENTRYGATE_VERSION_DB', '1.2.0');
-define ('ZENTRYGATE_VERSION_PLUGIN', '1.2.0');
+define ('ZENTRYGATE_VERSION_DB', '1.2.1');
+define ('ZENTRYGATE_VERSION_PLUGIN', '1.2.1');
 
 if (! defined ('ZENTRYGATE_DIR'))
 {

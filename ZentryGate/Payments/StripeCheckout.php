@@ -155,7 +155,7 @@ if (! class_exists ('\ZentryGate\Payments\StripeCheckout'))
 			$clientReferenceId = isset ($metaStr ['reservationId']) ? $metaStr ['reservationId'] : null;
 
 			// Idempotencia: usa reservationId si existe; si no, hash de parámetros
-			$idempotencyKey = $this->buildIdempotencyKey ($amountCents, $currency, $concepto, $successUrl, $cancelUrl, $metaStr);
+			$idempotencyKey = $this->buildIdempotencyKey ($amountCents, $currency, $successUrl, $cancelUrl, $metaStr);
 
 			$params = [ 'mode' => 'payment', 'success_url' => $successUrl, 'cancel_url' => $cancelUrl, 'expires_at' => $expiresAt, 'line_items' => [ [ 'quantity' => 1, 'price_data' => [ 'currency' => $currency, 'unit_amount' => $amountCents, 'product_data' => [ 'name' => $concepto]]]],
 					'metadata' => $metaStr];
@@ -197,18 +197,19 @@ if (! class_exists ('\ZentryGate\Payments\StripeCheckout'))
 		 * Genera una idempotency key estable para evitar sesiones duplicadas.
 		 * Si hay reservationId en metadata, la usa como base.
 		 */
-		private function buildIdempotencyKey (int $amountCents, string $currency, string $concepto, string $successUrl, string $cancelUrl, array $metadata): string
+		private function buildIdempotencyKey (int $amountCents, string $currency, string $successUrl, string $cancelUrl, array $metadata): string
 		{
-			$base = $metadata ['reservationId'] ?? null;
-			$payload = json_encode ([ 'amount' => $amountCents, 'currency' => strtoupper ($currency), 'name' => $concepto, 'success' => $successUrl, 'cancel' => $cancelUrl, 'meta' => $metadata], JSON_UNESCAPED_UNICODE);
+			// Constante base (ej. la reserva o el usuario+evento)
+			$base = $metadata ['reservationId'] ?? (($metadata ['userId'] ?? '') . '_' . ($metadata ['eventId'] ?? '') . '_' . ($metadata ['sectionId'] ?? ''));
 
-			$hash = substr (hash ('sha256', $payload), 0, 24);
-			if ($base)
-			{
-				// Mantén estable para la misma reserva
-				return 'chk_' . preg_replace ('/[^a-zA-Z0-9_\-]/', '_', (string) $base) . '_' . $hash;
-			}
-			return 'chk_' . $hash;
+			// Payload reducido solo a lo que define "este intento"
+			$payload = wp_json_encode ([ 'amount' => $amountCents, 'currency' => $currency, 'reservationId' => $metadata ['reservationId'] ?? null], JSON_UNESCAPED_UNICODE);
+
+			// Hash corto reproducible
+			$hash = substr (hash ('sha256', $payload), 0, 12);
+
+			// Ensamblar idempotency key
+			return 'chk_' . preg_replace ('/[^a-zA-Z0-9_\-]/', '_', (string) $base) . '_' . $hash;
 		}
 
 

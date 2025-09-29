@@ -39,14 +39,14 @@ class StripeWebhook
 	}
 
 
-	public static function handle (WP_REST_Request $request)
+	public static function handle (\WP_REST_Request $request)
 	{
 		try
 		{
 			self::bootStripe ();
 
 			$payload = $request->get_body (); // raw JSON
-			$sig = $_SERVER ['HTTP_STRIPE_SIGNATURE'] ?? '';
+			$sig = $request->get_header ('stripe-signature') ?? ''; // $sig = $_SERVER ['HTTP_STRIPE_SIGNATURE'] ?? '';
 			$settings = get_option ('zentrygate_stripe_settings', [ ]);
 			$whSecret = $settings ['webhook_secret'] ?? '';
 
@@ -54,16 +54,23 @@ class StripeWebhook
 			{
 				// Acepta 200 para que Stripe no reintente indefinidamente, pero loguea.
 				if (defined ('WP_DEBUG') && WP_DEBUG) error_log ('[Stripe] Falta webhook_secret en ajustes.');
-				return new WP_REST_Response ([ 'ok' => true], 200);
+				return new \WP_REST_Response ([ 'ok' => true], 200);
 			}
 
 			// Verifica firma
 			$event = \Stripe\Webhook::constructEvent ($payload, $sig, $whSecret);
 
+			// Registrar o tocar el evento en DB (idempotencia persistente)
+			$eventId = (string) $event->id;
+			$type = (string) $event->type;
+			$stripeCreated = isset ($event->created) ? (int) $event->created : null;
+			$eventArr = is_array ($event) ? $event : $event->toArray (); // objeto Stripe => array
+
 			// Idempotencia a nivel “evento”: si ya procesaste este event_id, devuelve 200.
-			if (self::alreadyProcessed ($event->id))
+			StripeEventsRepo::registerOrTouch ($eventId, $type, $eventArr, $stripeCreated);
+			if (StripeEventsRepo::isProcessed ($eventId))
 			{
-				return new WP_REST_Response ([ 'ok' => true, 'dup' => true], 200);
+				return new \WP_REST_Response ([ 'ok' => true, 'dup' => true], 200);
 			}
 
 			// Despacha por tipo
@@ -96,6 +103,15 @@ class StripeWebhook
 					self::onAsyncFailed ($event->data->object);
 					break;
 
+				case 'checkout.session.expired':
+
+					self::onCheckoutSessionExpired ($event->data->object);
+					break;
+				case 'payment_intent.canceled':
+
+					self::onPaymentIntentCanceled ($event->data->object);
+					break;
+
 				default:
 					// No hacemos nada para otros eventos
 					break;
@@ -104,23 +120,23 @@ class StripeWebhook
 			// Marca como procesado (idempotencia basada en Event ID)
 			self::markProcessed ($event->id);
 
-			return new WP_REST_Response ([ 'ok' => true], 200);
+			return new \WP_REST_Response ([ 'ok' => true], 200);
 		}
 		catch (\UnexpectedValueException $e)
 		{
 			// JSON inválido
-			return new WP_REST_Response ([ 'ok' => false, 'err' => 'invalid_json'], 400);
+			return new \WP_REST_Response ([ 'ok' => false, 'err' => 'invalid_json'], 400);
 		}
 		catch (\Stripe\Exception\SignatureVerificationException $e)
 		{
 			// Firma inválida
-			return new WP_REST_Response ([ 'ok' => false, 'err' => 'invalid_signature'], 400);
+			return new \WP_REST_Response ([ 'ok' => false, 'err' => 'invalid_signature'], 400);
 		}
 		catch (\Throwable $e)
 		{
 			if (defined ('WP_DEBUG') && WP_DEBUG) error_log ('[Stripe] Webhook error: ' . $e->getMessage ());
 			// Devuelve 200 para evitar tormenta de reintentos si es error lógico nuestro
-			return new WP_REST_Response ([ 'ok' => true, 'warn' => 'handled_with_error'], 200);
+			return new \WP_REST_Response ([ 'ok' => true, 'warn' => 'handled_with_error'], 200);
 		}
 	}
 
@@ -192,6 +208,40 @@ class StripeWebhook
 				$wpdb->insert ($table, $data);
 			}
 		}
+	}
+
+
+	private static function onCheckoutSessionExpired ($session): void
+	{
+		global $wpdb;
+		$table = $wpdb->prefix . 'zgReservations';
+		$piId = (string) ($session->payment_intent ?? '');
+		$now = current_time ('mysql');
+		$payloadJson = json_encode ($session, JSON_UNESCAPED_UNICODE);
+
+		// self::log('Marking session expired', ['pi' => $piId]);
+
+		$wpdb->query ($wpdb->prepare ("UPDATE {$table}
+            SET paymentStatus='failed', updatedAt=%s, stripePayload=%s
+          WHERE paymentIntentId=%s", $now, $payloadJson, $piId));
+
+		// Si gestionas aforo/bloqueos temporales, libéralo aquí.
+	}
+
+
+	private static function onPaymentIntentCanceled ($pi): void
+	{
+		global $wpdb;
+		$table = $wpdb->prefix . 'zgReservations';
+		$piId = (string) $pi->id;
+		$now = current_time ('mysql');
+		$payloadJson = json_encode ($pi, JSON_UNESCAPED_UNICODE);
+
+		// self::log('Marking PI canceled', ['pi' => $piId]);
+
+		$wpdb->query ($wpdb->prepare ("UPDATE {$table}
+            SET paymentStatus='canceled', updatedAt=%s, stripePayload=%s
+          WHERE paymentIntentId=%s", $now, $payloadJson, $piId));
 	}
 
 

@@ -242,7 +242,7 @@ class UserPage
 
 		// Llamada a tu helper de Stripe
 		$btn = new \ZentryGate\Payments\StripeCheckout ();
-		$res = $btn->payNow (amountCents: $amountCents, currency: 'EUR', concepto: $concepto, customerEmail: $email, metadata: $metaPayload, successUrl: $successUrl, cancelUrl: $cancelUrl);
+		$res = $btn->payNow ($amountCents, 'EUR', $concepto, $email, $metaPayload, $successUrl, $cancelUrl);
 
 		// var_dump ($res); die ();
 

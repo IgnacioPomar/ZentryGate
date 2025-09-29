@@ -141,10 +141,30 @@ class Install
         PRIMARY KEY (eventId, sectionId)
     ) $charsetCollate;";
 
+		$sqlStripeEvents = "CREATE TABLE {$prefix}zgStripeEvents (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        eventId VARCHAR(255) NOT NULL,
+        type VARCHAR(191) NOT NULL,
+        stripeCreated TIMESTAMP NULL DEFAULT NULL COMMENT 'Fecha del evento en Stripe (event->created)',
+        receivedAt DATETIME NOT NULL COMMENT 'Fecha local WP al recibir',
+        processedAt DATETIME NULL DEFAULT NULL COMMENT 'Fecha local WP al finalizar handler',
+        status VARCHAR(32) NOT NULL DEFAULT 'received',
+        httpStatusSent SMALLINT UNSIGNED NULL DEFAULT NULL,
+        attempts INT UNSIGNED NOT NULL DEFAULT 1,
+        lastError TEXT NULL,
+        payload LONGTEXT NOT NULL,
+        PRIMARY KEY (id),
+        UNIQUE KEY uniq_event (eventId),
+        KEY idx_type (type),
+        KEY idx_status (status),
+        KEY idx_received (receivedAt)
+    ) {$charsetCollate};";
+
 		dbDelta ($sqlUsers);
 		dbDelta ($sqlEvents);
 		dbDelta ($sqlReservations);
 		dbDelta ($sqlCapacity);
+		dbDelta ($sqlStripeEvents);
 
 		add_option ('zgDbVersion', ZENTRYGATE_VERSION_DB);
 	}

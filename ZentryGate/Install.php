@@ -96,6 +96,7 @@ class Install
         PRIMARY KEY (id)
     ) $charsetCollate;";
 
+		// YAGNI: quizás sería más interesante tener un UUID con la reserva, para usarlo en URLs y referencias externas
 		$sqlReservations = "CREATE TABLE {$prefix}zgReservations (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Identificador único de la reserva',
             userId BIGINT UNSIGNED NOT NULL COMMENT 'Referencia al usuario (zgUsers.id)',

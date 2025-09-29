@@ -8,6 +8,7 @@ namespace ZentryGate;
 class Auth
 {
 	private const LOGON_ON_VALIDATE = TRUE;
+	public static bool $isEmailVerified = false;
 	protected static array $lastErrors = [ ];
 	private static bool $isInitialized = false;
 	private static string $sessionDir;
@@ -37,6 +38,157 @@ class Auth
 		self::loadCookieData ();
 		self::processEarlyActions ();
 		self::$isInitialized = true;
+	}
+
+
+	/**
+	 * This method should be called early in the request lifecycle to ensure session data is available.
+	 *
+	 * Checks if the cookie was accepted, and if th Acceptance Post was submitted, it generates the cookie.
+	 * If the cookie is accepted:
+	 * - If there is a POST request for login, it clears sessionData, validates credentials, saves to disk, and sets the cookie.
+	 * - If there is no POST request, it validates the session from the file if it exists and fills sessionData.
+	 */
+	private static function processEarlyActions (): void
+	{
+		if (self::$cookieData === null)
+		{
+			if (isset ($_POST ['accept_ZentryGate_cookie']))
+			{
+				self::$cookieData = [ 'accepted' => true];
+				self::saveCookieData ();
+			}
+		}
+		else if (isset ($_GET ['e'], $_GET ['token']))
+		{
+			self::$isEmailVerified = self::handleEmailVerification ();
+
+			if (Auth::LOGON_ON_VALIDATE && self::$isEmailVerified)
+			{
+				// Logon automático tras validar
+
+				$email = (string) wp_unslash ($_GET ['e']);
+				$nonce = bin2hex (random_bytes (16));
+				$fileId = bin2hex (random_bytes (16));
+
+				self::$cookieData = [ 'accepted' => true, 'sessId' => $fileId, 'nonce' => $nonce, 'emailHash' => md5 ($email)];
+				self::saveCookieData ();
+
+				// YAGNI: Improve the security with a session table with multiples sessions per user
+				// Generate the session file
+				$session = [ 'nonce' => $nonce, 'email' => $email];
+				$sessionFile = self::$sessionDir . $fileId . '.json';
+				file_put_contents ($sessionFile, json_encode ($session));
+			}
+		}
+		else
+		{
+			$cookieDta = &self::$cookieData;
+			if (isset ($_POST ['zg_email'], $_POST ['zg_password']))
+			{
+				if (self::checkLoginForm ())
+				{
+					// Login successful: create session file and set cookie
+					$nonce = bin2hex (random_bytes (16));
+					$fileId = bin2hex (random_bytes (16));
+
+					$cookieDta ['sessId'] = $fileId;
+					$cookieDta ['nonce'] = $nonce;
+					$cookieDta ['emailHash'] = md5 (trim ($_POST ['zg_email']));
+
+					self::saveCookieData ();
+
+					// YAGNI: Improve the security with a session table with multiples sessions per user
+					// Generate the session file
+					$session = [ 'nonce' => $nonce, 'email' => trim ($_POST ['zg_email'])];
+					$sessionFile = self::$sessionDir . $fileId . '.json';
+					file_put_contents ($sessionFile, json_encode ($session));
+
+					global $wpdb;
+					$user = $wpdb->get_row ($wpdb->prepare ("SELECT * FROM {$wpdb->prefix}zgUsers WHERE email = %s", $email), ARRAY_A);
+
+					if (! $user)
+					{
+						return;
+					}
+
+					self::fillUserData ($user);
+				}
+				else
+				{
+					self::$lastErrors [] = __ ('Usuario inexistente o contraseña no valida.', 'zentrygate');
+					// Login failed, clear session data
+					self::$cookieData = [ 'accepted' => true];
+					self::saveCookieData ();
+				}
+			}
+			else if (isset ($cookieDta ['sessId']))
+			{
+				// Coockie exists, and no post request for login: check session file
+				$cookieDta = &self::$cookieData;
+				$sessionFile = self::$sessionDir . $cookieDta ['sessId'] . '.json';
+
+				if (file_exists ($sessionFile))
+				{
+					$sessionJson = file_get_contents ($sessionFile);
+					$session = json_decode ($sessionJson, true);
+
+					if (is_array ($session) && isset ($session ['nonce']) && $session ['nonce'] === $cookieDta ['nonce'] && $cookieDta ['emailHash'] === md5 ($session ['email']))
+					{
+						// Check if the user is enabled, and load user data
+						self::checkUserStillEnabled ($session ['email']);
+					}
+					else
+					{
+						// The nonce does not match... so its a hacking attempt: There is no valid login, without information
+					}
+				}
+				else
+				{
+					// There is no session file... it may be expired, or a hacking attempt: There is no valid login, without information
+				}
+			}
+			else
+			{
+				// The cookie was accepted, but there is no POST request for login, nor we have a valid session id to check.
+			}
+		}
+	}
+
+
+	public static function handleEmailVerification (): bool
+	{
+		if (! isset ($_GET ['e'], $_GET ['token']))
+		{
+			return false;
+		}
+
+		$eParam = isset ($_GET ['e']) ? (string) wp_unslash ($_GET ['e']) : '';
+		$b64 = strtr ($eParam, '-_', '+/');
+		$pad = strlen ($b64) % 4;
+		if ($pad) $b64 .= str_repeat ('=', 4 - $pad);
+		$email = base64_decode ($b64, true);
+
+		$token = sanitize_text_field (wp_unslash ($_GET ['token']));
+
+		global $wpdb;
+		$user = $wpdb->get_row ($wpdb->prepare ("SELECT email, isEnabled, verifyToken
+               FROM {$wpdb->prefix}zgUsers
+              WHERE email = %s", $email), ARRAY_A);
+
+		if (! $user || (bool) $user ['isEnabled'] || $user ['verifyToken'] !== $token)
+		{
+			return false;
+		}
+
+		// Verificación correcta: activar usuario y limpiar token
+		$updated = $wpdb->update ("{$wpdb->prefix}zgUsers", [ 'isEnabled' => 1, 'verifyToken' => null], [ 'email' => $email], [ '%d', '%s'], [ '%s']);
+		if (false === $updated)
+		{
+
+			return false;
+		}
+		return true;
 	}
 
 
@@ -208,89 +360,6 @@ class Auth
 
 		// IMPORTANTE: no debe haberse enviado salida antes de esto
 		setcookie ('ZentryGate', $b64, $options);
-	}
-
-
-	/**
-	 * This method should be called early in the request lifecycle to ensure session data is available.
-	 *
-	 * Checks if the cookie was accepted, and if th Acceptance Post was submitted, it generates the cookie.
-	 * If the cookie is accepted:
-	 * - If there is a POST request for login, it clears sessionData, validates credentials, saves to disk, and sets the cookie.
-	 * - If there is no POST request, it validates the session from the file if it exists and fills sessionData.
-	 */
-	private static function processEarlyActions (): void
-	{
-		if (self::$cookieData === null)
-		{
-			if (isset ($_POST ['accept_ZentryGate_cookie']))
-			{
-				self::$cookieData = [ 'accepted' => true];
-				self::saveCookieData ();
-			}
-		}
-		else
-		{
-			$cookieDta = &self::$cookieData;
-			if (isset ($_POST ['zg_email'], $_POST ['zg_password']))
-			{
-				if (self::checkLoginForm ())
-				{
-					// Login successful: create session file and set cookie
-					$nonce = bin2hex (random_bytes (16));
-					$fileId = bin2hex (random_bytes (16));
-
-					$cookieDta ['sessId'] = $fileId;
-					$cookieDta ['nonce'] = $nonce;
-					$cookieDta ['emailHash'] = md5 (trim ($_POST ['zg_email']));
-
-					self::saveCookieData ();
-
-					// YAGNI: Improve the security with a session table with multiples sessions per user
-					// Generate the session file
-					$session = [ 'nonce' => $nonce, 'email' => trim ($_POST ['zg_email'])];
-					$sessionFile = self::$sessionDir . $fileId . '.json';
-					file_put_contents ($sessionFile, json_encode ($session));
-				}
-				else
-				{
-					self::$lastErrors [] = __ ('Usuario inexistente o contraseña no valida.', 'zentrygate');
-					// Login failed, clear session data
-					self::$cookieData = [ 'accepted' => true];
-					self::saveCookieData ();
-				}
-			}
-			else if (isset ($cookieDta ['sessId']))
-			{
-				// Coockie exists, and no post request for login: check session file
-				$cookieDta = &self::$cookieData;
-				$sessionFile = self::$sessionDir . $cookieDta ['sessId'] . '.json';
-
-				if (file_exists ($sessionFile))
-				{
-					$sessionJson = file_get_contents ($sessionFile);
-					$session = json_decode ($sessionJson, true);
-
-					if (is_array ($session) && isset ($session ['nonce']) && $session ['nonce'] === $cookieDta ['nonce'] && $cookieDta ['emailHash'] === md5 ($session ['email']))
-					{
-						// Check if the user is enabled, and load user data
-						self::checkUserStillEnabled ($session ['email']);
-					}
-					else
-					{
-						// The nonce does not match... so its a hacking attempt: There is no valid login, without information
-					}
-				}
-				else
-				{
-					// There is no session file... it may be expired, or a hacking attempt: There is no valid login, without information
-				}
-			}
-			else
-			{
-				// The cookie was accepted, but there is no POST request for login, nor we have a valid session id to check.
-			}
-		}
 	}
 
 
@@ -784,8 +853,6 @@ class Auth
 			return false;
 		}
 
-		var_dump ($user);
-
 		// Rate‐limit: avoid sending too many reset requests
 		if (self::isStillValidToken ($user ['resetRequestedAt'], self::RESET_TOKEN_COOL_DOWN * MINUTE_IN_SECONDS))
 		{
@@ -796,8 +863,6 @@ class Auth
 			// We have returned if the token was still valid, so now we know it is expired or not existing.
 			$token = bin2hex (random_bytes (32));
 
-			var_dump ($token);
-
 			// 4. Guardar token + timestamp de solicitud
 			$now = current_time ('mysql');
 			$updated = $wpdb->update ("{$wpdb->prefix}zgUsers", [ 'resetToken' => $token, 'resetRequestedAt' => $now], [ 'email' => $email], [ '%s', '%s'], [ '%s']);
@@ -805,8 +870,6 @@ class Auth
 			{
 				return false;
 			}
-
-			var_dump ($updated);
 		}
 
 		// 5. Envío de email. Es get, así que el permalink es perfecto
@@ -941,63 +1004,6 @@ class Auth
         </p>
     </div>
     <?php
-	}
-
-
-	public static function handleEmailVerification (): bool
-	{
-		if (! isset ($_GET ['e'], $_GET ['token']))
-		{
-			return false;
-		}
-
-		$eParam = isset ($_GET ['e']) ? (string) wp_unslash ($_GET ['e']) : '';
-		$b64 = strtr ($eParam, '-_', '+/');
-		$pad = strlen ($b64) % 4;
-		if ($pad) $b64 .= str_repeat ('=', 4 - $pad);
-		$email = base64_decode ($b64, true);
-
-		$token = sanitize_text_field (wp_unslash ($_GET ['token']));
-
-		global $wpdb;
-		$user = $wpdb->get_row ($wpdb->prepare ("SELECT email, isEnabled, verifyToken
-               FROM {$wpdb->prefix}zgUsers
-              WHERE email = %s", $email), ARRAY_A);
-
-		if (! $user || (bool) $user ['isEnabled'] || $user ['verifyToken'] !== $token)
-		{
-			return false;
-		}
-
-		// Verificación correcta: activar usuario y limpiar token
-		$updated = $wpdb->update ("{$wpdb->prefix}zgUsers", [ 'isEnabled' => 1, 'verifyToken' => null], [ 'email' => $email], [ '%d', '%s'], [ '%s']);
-		if (false === $updated)
-		{
-
-			return false;
-		}
-
-		if (Auth::LOGON_ON_VALIDATE)
-		{
-			// Logon automático tras validar
-			self::checkUserStillEnabled ($email);
-			if (self::$userData !== null)
-			{
-				$nonce = bin2hex (random_bytes (16));
-				$fileId = bin2hex (random_bytes (16));
-
-				self::$cookieData = [ 'accepted' => true, 'sessId' => $fileId, 'nonce' => $nonce, 'emailHash' => md5 ($email)];
-				self::saveCookieData ();
-
-				// YAGNI: Improve the security with a session table with multiples sessions per user
-				// Generate the session file
-				$session = [ 'nonce' => $nonce, 'email' => $email];
-				$sessionFile = self::$sessionDir . $fileId . '.json';
-				file_put_contents ($sessionFile, json_encode ($session));
-			}
-		}
-
-		return true;
 	}
 
 

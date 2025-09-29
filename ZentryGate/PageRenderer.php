@@ -93,7 +93,7 @@ class PageRenderer
 
 					break;
 				case 'verify':
-					if (Auth::handleEmailVerification ())
+					if (Auth::$isEmailVerified)
 					{
 						if (Auth::LOGON_ON_VALIDATE)
 						{

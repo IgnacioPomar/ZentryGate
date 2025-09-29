@@ -3,7 +3,7 @@
  * Plugin Name: ZentryGate
  * Plugin URI: https://github.com/IgnacioPomar/ZentryGate
  * Description: Plugin para la gestión de eventos con control de aforo.
- * Version: 1.2.2
+ * Version: 1.2.3
  * Author: Ignacio Pomar Ballestero
  * Author URI: https://github.com/IgnacioPomar
  * License: GPL2
@@ -12,7 +12,7 @@ defined ('ABSPATH') || exit ();
 
 // Plugin version defines. Renaneber change also the comments above.
 define ('ZENTRYGATE_VERSION_DB', '1.2.1');
-define ('ZENTRYGATE_VERSION_PLUGIN', '1.2.2');
+define ('ZENTRYGATE_VERSION_PLUGIN', '1.2.3');
 
 if (! defined ('ZENTRYGATE_DIR'))
 {
@@ -43,6 +43,7 @@ require_once ZENTRYGATE_DIR . 'ZentryGate/UserPage.php';
 
 require_once ZENTRYGATE_DIR . 'ZentryGate/Payments/StripeCheckout.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/Payments/StripeWebhook.php';
+require_once ZENTRYGATE_DIR . 'ZentryGate/Payments/StripeEventsRepo.php';
 
 // Activation hook
 register_activation_hook (__FILE__, [ \ZentryGate\Install::class, 'activate']);

@@ -118,7 +118,8 @@ class StripeWebhook
 			}
 
 			// Marca como procesado (idempotencia basada en Event ID)
-			self::markProcessed ($event->id);
+			// self::markProcessed ($event->id);
+			StripeEventsRepo::markProcessed ($eventId, 200);
 
 			return new \WP_REST_Response ([ 'ok' => true], 200);
 		}

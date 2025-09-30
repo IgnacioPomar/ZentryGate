@@ -4,15 +4,25 @@ namespace ZentryGate;
 
 /**
  * Handles authentication, cookie consent, and session management for ZentryGate plugin.
+ * Versión simplificada de cookies:
+ * - Presencia de cookie = cookies aceptadas.
+ * - Cookie "@" -> aceptadas pero no logueado.
+ * - Cookie "nonce@userId" -> se carga el usuario por id (no se valida el nonce).
  */
 class Auth
 {
+	private const COOKIE_NAME = 'ZentryGate_v2';
 	private const LOGON_ON_VALIDATE = TRUE;
 	public static bool $isEmailVerified = false;
 	protected static array $lastErrors = [ ];
 	private static bool $isInitialized = false;
-	private static string $sessionDir;
-	private static ?array $cookieData = null;
+
+	// ❌ Eliminado: $sessionDir y $cookieData
+	// private static string $sessionDir;
+	// private static ?array $cookieData = null;
+
+	// ✅ Cookie simplificada como string plano
+	private static ?string $cookieRaw = null;
 	private static ?array $userData = null;
 
 
@@ -26,136 +36,87 @@ class Auth
 			return;
 		}
 
-		self::$sessionDir = rtrim (sys_get_temp_dir (), '/') . '/Zentrygate/';
-		if (! is_dir (self::$sessionDir))
-		{
-			mkdir (self::$sessionDir, 0700, true);
-		}
+		// ❌ Eliminado: sistema de sesiones en disco
+		// self::$sessionDir = rtrim(sys_get_temp_dir(), '/') . '/Zentrygate/';
+		// if (!is_dir(self::$sessionDir)) { mkdir(self::$sessionDir, 0700, true); }
 
-		self::$cookieData = null;
+		self::$cookieRaw = null;
 		self::$userData = null;
 
-		self::loadCookieData ();
+		self::loadCookieValue ();
 		self::processEarlyActions ();
 		self::$isInitialized = true;
 	}
 
 
 	/**
-	 * This method should be called early in the request lifecycle to ensure session data is available.
-	 *
-	 * Checks if the cookie was accepted, and if th Acceptance Post was submitted, it generates the cookie.
-	 * If the cookie is accepted:
-	 * - If there is a POST request for login, it clears sessionData, validates credentials, saves to disk, and sets the cookie.
-	 * - If there is no POST request, it validates the session from the file if it exists and fills sessionData.
+	 * Lógica temprana del ciclo:
+	 * - Si no hay cookie y hay POST de aceptación -> fija "@"
+	 * - Si hay login por POST y credenciales válidas -> fija "nonce@userId"
+	 * - Si hay cookie ya presente:
+	 * - "@" => aceptadas sin login
+	 * - "<algo>@<id>" => carga usuario por id (sin validar nonce)
 	 */
 	private static function processEarlyActions (): void
 	{
-		if (self::$cookieData === null)
+		// 1) Aceptación de cookies
+		if (self::$cookieRaw === null)
 		{
 			if (isset ($_POST ['accept_ZentryGate_cookie']))
 			{
-				self::$cookieData = [ 'accepted' => true];
-				self::saveCookieData ();
+				self::saveCookieValue ('@');
 			}
+			return;
 		}
-		else if (isset ($_GET ['e'], $_GET ['token']))
+
+		// 2) Login por formulario
+		if (isset ($_POST ['zg_email'], $_POST ['zg_password']))
 		{
-			self::$isEmailVerified = self::handleEmailVerification ();
-
-			if (Auth::LOGON_ON_VALIDATE && self::$isEmailVerified)
+			if (self::checkLoginForm ())
 			{
-				// Logon automático tras validar
-
-				$email = (string) wp_unslash ($_GET ['e']);
-				$nonce = bin2hex (random_bytes (16));
-				$fileId = bin2hex (random_bytes (16));
-
-				self::$cookieData = [ 'accepted' => true, 'sessId' => $fileId, 'nonce' => $nonce, 'emailHash' => md5 ($email)];
-				self::saveCookieData ();
-
-				// YAGNI: Improve the security with a session table with multiples sessions per user
-				// Generate the session file
-				$session = [ 'nonce' => $nonce, 'email' => $email];
-				$sessionFile = self::$sessionDir . $fileId . '.json';
-				file_put_contents ($sessionFile, json_encode ($session));
-			}
-		}
-		else
-		{
-			$cookieDta = &self::$cookieData;
-			if (isset ($_POST ['zg_email'], $_POST ['zg_password']))
-			{
-				if (self::checkLoginForm ())
+				$userId = (int) (self::$userData ['userId'] ?? 0);
+				if ($userId > 0)
 				{
-					// Login successful: create session file and set cookie
 					$nonce = bin2hex (random_bytes (16));
-					$fileId = bin2hex (random_bytes (16));
-
-					$cookieDta ['sessId'] = $fileId;
-					$cookieDta ['nonce'] = $nonce;
-					$cookieDta ['emailHash'] = md5 (trim ($_POST ['zg_email']));
-
-					self::saveCookieData ();
-
-					// YAGNI: Improve the security with a session table with multiples sessions per user
-					// Generate the session file
-					$session = [ 'nonce' => $nonce, 'email' => trim ($_POST ['zg_email'])];
-					$sessionFile = self::$sessionDir . $fileId . '.json';
-					file_put_contents ($sessionFile, json_encode ($session));
-
-					global $wpdb;
-					$user = $wpdb->get_row ($wpdb->prepare ("SELECT * FROM {$wpdb->prefix}zgUsers WHERE email = %s", $email), ARRAY_A);
-
-					if (! $user)
-					{
-						return;
-					}
-
-					self::fillUserData ($user);
+					self::saveCookieValue ($nonce . '@' . $userId);
 				}
 				else
 				{
-					self::$lastErrors [] = __ ('Usuario inexistente o contraseña no valida.', 'zentrygate');
-					// Login failed, clear session data
-					self::$cookieData = [ 'accepted' => true];
-					self::saveCookieData ();
-				}
-			}
-			else if (isset ($cookieDta ['sessId']))
-			{
-				// Coockie exists, and no post request for login: check session file
-				$cookieDta = &self::$cookieData;
-				$sessionFile = self::$sessionDir . $cookieDta ['sessId'] . '.json';
-
-				if (file_exists ($sessionFile))
-				{
-					$sessionJson = file_get_contents ($sessionFile);
-					$session = json_decode ($sessionJson, true);
-
-					if (is_array ($session) && isset ($session ['nonce']) && $session ['nonce'] === $cookieDta ['nonce'] && $cookieDta ['emailHash'] === md5 ($session ['email']))
-					{
-						// Check if the user is enabled, and load user data
-						self::checkUserStillEnabled ($session ['email']);
-					}
-					else
-					{
-						// The nonce does not match... so its a hacking attempt: There is no valid login, without information
-					}
-				}
-				else
-				{
-					// There is no session file... it may be expired, or a hacking attempt: There is no valid login, without information
+					self::saveCookieValue ('@');
 				}
 			}
 			else
 			{
-				// The cookie was accepted, but there is no POST request for login, nor we have a valid session id to check.
+				self::$lastErrors [] = __ ('Usuario inexistente o contraseña no valida.', 'zentrygate');
+				self::saveCookieValue ('@');
+			}
+			return;
+		}
+
+		// 3) Con cookie presente, intenta cargar usuario si es "algo@id"
+		$cookie = (string) self::$cookieRaw;
+
+		if ($cookie === '@')
+		{
+			return; // aceptadas sin login
+		}
+
+		$parts = explode ('@', $cookie, 2);
+		if (count ($parts) === 2)
+		{
+			$idPart = $parts [1];
+			$userId = ctype_digit ($idPart) ? (int) $idPart : 0;
+			if ($userId > 0)
+			{
+				self::loadUserById ($userId); // rellena self::$userData si existe y está habilitado
 			}
 		}
 	}
 
 
+	/**
+	 * Verificación de email (sin cambios de fondo).
+	 */
 	public static function handleEmailVerification (): bool
 	{
 		if (! isset ($_GET ['e'], $_GET ['token']))
@@ -185,7 +146,6 @@ class Auth
 		$updated = $wpdb->update ("{$wpdb->prefix}zgUsers", [ 'isEnabled' => 1, 'verifyToken' => null], [ 'email' => $email], [ '%d', '%s'], [ '%s']);
 		if (false === $updated)
 		{
-
 			return false;
 		}
 		return true;
@@ -265,29 +225,30 @@ class Auth
 		?>
         <div class="zg-alert zg-alert-error" role="alert" aria-live="assertive" aria-labelledby="<?php
 
-		echo esc_attr ($heading_id);
+echo esc_attr ($heading_id);
 		?>">
             <strong id="<?php
 
-		echo esc_attr ($heading_id);
+echo esc_attr ($heading_id);
 		?>">
                 <?php
 
-		echo esc_html__ ('Por favor, corrige los siguientes errores:', 'zentrygate');
+echo esc_html__ ('Por favor, corrige los siguientes errores:', 'zentrygate');
 		?>
             </strong>
             <ul class="zg-alert-list">
                 <?php
 
-		foreach ($out as $msg)
+foreach ($out as $msg)
 		:
 			?>
                     <li><?php
 
-			echo esc_html ($msg);
+echo esc_html ($msg);
 			?></li>
                 <?php
-		endforeach
+
+endforeach
 		;
 		?>
             </ul>
@@ -297,83 +258,47 @@ class Auth
 
 
 	/**
-	 * Load and decode cookie data.
+	 * Carga el valor plano de la cookie (string).
 	 */
-	private static function loadCookieData (): void
+	private static function loadCookieValue (): void
 	{
-		self::$cookieData = null;
-
-		$raw = $_COOKIE ['ZentryGate'] ?? '';
-		if ($raw === '')
-		{
-			return;
-		}
-
-		// Base64url -> base64
-		$b64 = strtr ($raw, '-_', '+/');
-
-		// Añade padding hasta múltiplo de 4
-		$remainder = strlen ($b64) % 4;
-		if ($remainder)
-		{
-			$b64 .= str_repeat ('=', 4 - $remainder);
-		}
-
-		// Decodifica en modo estricto
-		$decoded = base64_decode ($b64, true);
-		if ($decoded === false)
-		{
-			return;
-		}
-
-		// Decodifica JSON
-		$data = json_decode ($decoded, true);
-		if (json_last_error () === JSON_ERROR_NONE && is_array ($data))
-		{
-			self::$cookieData = $data;
-		}
+		$raw = $_COOKIE [self::COOKIE_NAME] ?? null;
+		self::$cookieRaw = is_string ($raw) ? $raw : null;
 	}
 
 
-	private static function saveCookieData (): void
+	/**
+	 * Guarda la cookie como string plano.
+	 */
+	private static function saveCookieValue (string $value): void
 	{
-		// Serializa de forma segura
-		$json = json_encode (self::$cookieData, JSON_UNESCAPED_SLASHES);
-		if ($json === false)
-		{
-			// Si algo raro pasa, no intentes setear la cookie
-			return;
-		}
-
-		// base64url (sin padding)
-		$b64 = rtrim (strtr (base64_encode ($json), '+/', '-_'), '=');
-
 		$siteHost = wp_parse_url (home_url (), PHP_URL_HOST);
 
 		$options = [ 'expires' => time () + 365 * 24 * 60 * 60, // 1 año
-		'path' => '/', // raíz del sitio
-		'domain' => $siteHost, // HostOnly; usa 'agj.madrid' si quieres incluir subdominios
-		'secure' => is_ssl (), // true si el sitio está en https
-		'httponly' => true, // no accesible desde JS
-		'samesite' => 'Lax' // navegación desde email/link OK
-		];
+		'path' => '/', 'domain' => $siteHost, 'secure' => is_ssl (), 'httponly' => true, 'samesite' => 'Lax'];
 
 		// IMPORTANTE: no debe haberse enviado salida antes de esto
-		setcookie ('ZentryGate', $b64, $options);
+		setcookie (self::COOKIE_NAME, $value, $options);
+		self::$cookieRaw = $value;
 	}
 
 
 	/**
 	 * Check if the ZentryGate cookie is accepted.
+	 * Ahora: presencia de cookie = aceptadas.
 	 */
 	public static function isCookieAccepted (): bool
 	{
-		return self::$cookieData !== null;
+		if (self::$cookieRaw === null)
+		{
+			self::loadCookieValue ();
+		}
+		return self::$cookieRaw !== null;
 	}
 
 
 	/**
-	 * Check if we have a valid user session (loader by coockie or by Form).
+	 * Check if we have a valid user session (loaded by cookie or by form).
 	 */
 	public static function isLoggedIn (): bool
 	{
@@ -395,11 +320,9 @@ class Auth
 	 */
 	public static function renderCookiePrompt (): void
 	{
-		// Asegúrate de llamar a wp_enqueue_style o inline CSS para .zg-cookie-form si lo deseas
 		?>
-    <form method="post" class="zg-cookie-form" aria-labelledby="zg-cookie-title" action="<?=PLugin::$permalink?>">
-        <?php
-
+        <form method="post" class="zg-cookie-form" aria-labelledby="zg-cookie-title" action="<?=PLugin::$permalink?>">
+            <?php
 		wp_nonce_field ('zg_cookie_consent_action', 'zg_cookie_consent_nonce');
 		$page_id = intval (get_option ('zg_cookie_prompt_page'));
 		$buttonText = "Continuar";
@@ -410,16 +333,16 @@ class Auth
 		}
 		else
 		{
-			echo '<p>' . esc_html_e ('Por favor, acepta el uso de cookies para poder reservar tu asistencia a las jornadas.', 'zentrygate') . '</p>';
+			echo '<p>' . esc_html__ ('Por favor, acepta el uso de cookies para poder reservar tu asistencia a las jornadas.', 'zentrygate') . '</p>';
 		}
-		?>        
-        <div class="zg-form-footer">
-            <button type="submit" name="accept_ZentryGate_cookie" class="button button-primary">
-                <?=$buttonText?>
-            </button>
-        </div>
-    </form>
-    <?php
+		?>
+            <div class="zg-form-footer">
+                <button type="submit" name="accept_ZentryGate_cookie" class="button button-primary">
+                    <?=$buttonText?>
+                </button>
+            </div>
+        </form>
+        <?php
 	}
 
 
@@ -429,10 +352,8 @@ class Auth
 	public static function renderLoginForm (): void
 	{
 		?>
-    <form method="post" class="zg-login-form" aria-labelledby="zg-login-title" action="<?=PLugin::$permalink?>">
-        
-        <?php
-
+        <form method="post" class="zg-login-form" aria-labelledby="zg-login-title" action="<?=PLugin::$permalink?>">
+            <?php
 		if (! empty (self::$lastErrors))
 		{
 			self::renderErrors (self::$lastErrors);
@@ -447,57 +368,55 @@ class Auth
 		}
 		else
 		{
-			echo '<p>' . esc_html_e ('Por favor, inicia sesión para acceder al sistema de reservas.', 'zentrygate') . '</p>';
+			echo '<p>' . esc_html__ ('Por favor, inicia sesión para acceder al sistema de reservas.', 'zentrygate') . '</p>';
 		}
 		?>
-        
-        
-        <div class="zg-form-body">
-            <label for="zg_email">
-                <?=esc_html_e ('Correo electrónico', 'zentrygate');?>
-                <input
-                    type="email"
-                    id="zg_email"
-                    name="zg_email"
-                    placeholder="<?=esc_attr_e ('ejemplo@correo.com', 'zentrygate');?>"
-                    required
-                    aria-required="true"
-                >
-            </label>
-            <br>
-            <label for="zg_password">
-                <?=esc_html_e ('Contraseña', 'zentrygate');?>
-                <input
-                    type="password"
-                    id="zg_password"
-                    name="zg_password"
-                    placeholder=""
-                    required
-                    aria-required="true"
-                >
-            </label>
-        </div>
-        <div class="zg-form-footer">
-            <button type="submit" name="zg_login" class="button button-primary">
-                <?=esc_html_e ('Acceder', 'zentrygate');?>
-            </button>
-            <p class="zg-auth-links">
-                <a class="zg-pass-recovery" href="<?=esc_url (add_query_arg ('zg_action', 'pass_recovery', PLugin::$permalink));?>">
-                    <?=esc_html_e ('¿Has olvidado tu contraseña?', 'zentrygate');?>
-                </a>
-                &nbsp;·&nbsp;
-                <a class="zg-register" href="<?=esc_url (add_query_arg ('zg_action', 'register', PLugin::$permalink));?>">
-                    <?=esc_html_e ('¿No tienes cuenta? Regístrate', 'zentrygate');?>
-                </a>
-            </p>
-        </div>
-    </form>
-    <?php
+            <div class="zg-form-body">
+                <label for="zg_email">
+                    <?=esc_html__ ('Correo electrónico', 'zentrygate');?>
+                    <input
+                        type="email"
+                        id="zg_email"
+                        name="zg_email"
+                        placeholder="<?=esc_attr__ ('ejemplo@correo.com', 'zentrygate');?>"
+                        required
+                        aria-required="true"
+                    >
+                </label>
+                <br>
+                <label for="zg_password">
+                    <?=esc_html__ ('Contraseña', 'zentrygate');?>
+                    <input
+                        type="password"
+                        id="zg_password"
+                        name="zg_password"
+                        placeholder=""
+                        required
+                        aria-required="true"
+                    >
+                </label>
+            </div>
+            <div class="zg-form-footer">
+                <button type="submit" name="zg_login" class="button button-primary">
+                    <?=esc_html__ ('Acceder', 'zentrygate');?>
+                </button>
+                <p class="zg-auth-links">
+                    <a class="zg-pass-recovery" href="<?=esc_url (add_query_arg ('zg_action', 'pass_recovery', PLugin::$permalink));?>">
+                        <?=esc_html__ ('¿Has olvidado tu contraseña?', 'zentrygate');?>
+                    </a>
+                    &nbsp;·&nbsp;
+                    <a class="zg-register" href="<?=esc_url (add_query_arg ('zg_action', 'register', PLugin::$permalink));?>">
+                        <?=esc_html__ ('¿No tienes cuenta? Regístrate', 'zentrygate');?>
+                    </a>
+                </p>
+            </div>
+        </form>
+        <?php
 	}
 
 
 	/**
-	 * Check if the user is still enabled and load user data.
+	 * Rellena self::$userData con los datos de usuario.
 	 */
 	private static function fillUserData (array $user): void
 	{
@@ -505,6 +424,9 @@ class Auth
 	}
 
 
+	/**
+	 * Conservado por compatibilidad: carga por email y comprueba enabled.
+	 */
 	private static function checkUserStillEnabled (string $email): void
 	{
 		global $wpdb;
@@ -512,18 +434,37 @@ class Auth
 
 		if ($user && $user ['isEnabled'])
 		{
-			// User is enabled, fill user data
 			self::fillUserData ($user);
 		}
 		else
 		{
-			self::$userData = null; // User is not enabled or does not exist
+			self::$userData = null;
+		}
+	}
+
+
+	/**
+	 * NUEVO: carga por id (para el flujo de cookie "<nonce>@<id>").
+	 */
+	private static function loadUserById (int $userId): void
+	{
+		global $wpdb;
+		$user = $wpdb->get_row ($wpdb->prepare ("SELECT * FROM {$wpdb->prefix}zgUsers WHERE id = %d", $userId), ARRAY_A);
+
+		if ($user && ! empty ($user ['isEnabled']))
+		{
+			self::fillUserData ($user);
+		}
+		else
+		{
+			self::$userData = null;
 		}
 	}
 
 
 	/**
 	 * Check login credentials from form and store session if successful.
+	 * (Ahora solo rellena self::$userData; la cookie se gestiona en processEarlyActions()).
 	 */
 	private static function checkLoginForm (): bool
 	{
@@ -589,65 +530,65 @@ class Auth
 		$token = isset ($_GET ['token']) ? sanitize_text_field (wp_unslash ($_GET ['token'])) : '';
 
 		?>
-    <form method="post" class="zg-recovery-change-password-form" aria-labelledby="zg-change-title" action="<?=PLugin::$permalink?>">
-        <?php
+        <form method="post" class="zg-recovery-change-password-form" aria-labelledby="zg-change-title" action="<?=PLugin::$permalink?>">
+            <?php
 		// Mantener acción y datos en POST
 		printf ('<input type="hidden" name="zg_recover_email" value="%s">', esc_attr ($email));
 		printf ('<input type="hidden" name="token" value="%s">', esc_attr ($token));
 		// Nonce para seguridad
 		wp_nonce_field ('zg_pass_reset_action', 'zg_pass_reset_nonce');
 		?>
-        <div class="zg-form-header">
-            <h2 id="zg-change-title"><?php
+            <div class="zg-form-header">
+                <h2 id="zg-change-title"><?php
 
-		esc_html_e ('Establecer nueva contraseña', 'zentrygate');
+esc_html_e ('Establecer nueva contraseña', 'zentrygate');
 		?></h2>
-        </div>
-        <div class="zg-form-body">
-            <label for="zg_new_password">
-                <?php
+            </div>
+            <div class="zg-form-body">
+                <label for="zg_new_password">
+                    <?php
 
-		esc_html_e ('Nueva contraseña', 'zentrygate');
+esc_html_e ('Nueva contraseña', 'zentrygate');
 		?>
-                <input
-                    type="password"
-                    id="zg_new_password"
-                    name="zg_new_password"
-                    placeholder=""
-                    required
-                    aria-required="true"
+                    <input
+                        type="password"
+                        id="zg_new_password"
+                        name="zg_new_password"
+                        placeholder=""
+                        required
+                        aria-required="true"
+                    >
+                </label>
+                <br>
+                <label for="zg_confirm_password">
+                    <?php
+
+esc_html_e ('Repite la contraseña', 'zentrygate');
+		?>
+                    <input
+                        type="password"
+                        id="zg_confirm_password"
+                        name="zg_confirm_password"
+                        placeholder=""
+                        required
+                        aria-required="true"
+                    >
+                </label>
+            </div>
+            <div class="zg-form-footer">
+                <button
+                    type="submit"
+                    name="zg_change_password"
+                    class="button button-primary"
                 >
-            </label>
-            <br>
-            <label for="zg_confirm_password">
-                <?php
+                    <?php
 
-		esc_html_e ('Repite la contraseña', 'zentrygate');
+esc_html_e ('Cambiar contraseña', 'zentrygate');
 		?>
-                <input
-                    type="password"
-                    id="zg_confirm_password"
-                    name="zg_confirm_password"
-                    placeholder=""
-                    required
-                    aria-required="true"
-                >
-            </label>
-        </div>
-        <div class="zg-form-footer">
-            <button
-                type="submit"
-                name="zg_change_password"
-                class="button button-primary"
-            >
-                <?php
-
-		esc_html_e ('Cambiar contraseña', 'zentrygate');
-		?>
-            </button>
-        </div>
-    </form>
-    <?php
+                </button>
+            </div>
+        </form>
+        <?php
 	}
 
 
@@ -659,7 +600,7 @@ class Auth
 			$email = sanitize_email ($_GET ['zg_recover_email']);
 			if (! is_email ($email))
 			{
-				echo '<p class="error">' . esc_html_e ('El correo electrónico proporcionado no es válido.', 'zentrygate') . '</p>';
+				echo '<p class="error">' . esc_html__ ('El correo electrónico proporcionado no es válido.', 'zentrygate') . '</p>';
 				return false;
 			}
 
@@ -680,11 +621,12 @@ class Auth
 	public static function renderRecoveryRequested (): void
 	{
 		?>
-    <div class="zg-notice zg-notice-success" role="alert" aria-live="polite" aria-labelledby="zg-recovery-requested-title">
-        <strong id="zg-recovery-requested-title"><?=esc_html_e ('Solicitud de recuperación enviada', 'zentrygate');?></strong>
-        <p><?=esc_html_e ('Si el correo electrónico proporcionado existe en nuestro sistema, recibirás por correo electrónico un enlace para restablecer tu contraseña.', 'zentrygate');?></p>
-        <p class="zg-auth-links"><a href="<?=esc_url (add_query_arg ('zg_action', 'login'));?>"><?=esc_html_e ('Ir a pantalla de login', 'zentrygate');?></a></p>
-    </div><?php
+        <div class="zg-notice zg-notice-success" role="alert" aria-live="polite" aria-labelledby="zg-recovery-requested-title">
+            <strong id="zg-recovery-requested-title"><?=esc_html__ ('Solicitud de recuperación enviada', 'zentrygate');?></strong>
+            <p><?=esc_html__ ('Si el correo electrónico proporcionado existe en nuestro sistema, recibirás por correo electrónico un enlace para restablecer tu contraseña.', 'zentrygate');?></p>
+            <p class="zg-auth-links"><a href="<?=esc_url (add_query_arg ('zg_action', 'login'));?>"><?=esc_html__ ('Ir a pantalla de login', 'zentrygate');?></a></p>
+        </div>
+        <?php
 	}
 
 
@@ -698,21 +640,20 @@ class Auth
 			$email = sanitize_email ($_GET ['zg_recover_email']);
 			if (! is_email ($email))
 			{
-				echo '<p class="error">' . esc_html_e ('El correo electrónico proporcionado no es válido.', 'zentrygate') . '</p>';
+				echo '<p class="error">' . esc_html__ ('El correo electrónico proporcionado no es válido.', 'zentrygate') . '</p>';
 				return;
 			}
 
 			if (self::processRecoveryChangePassword ())
 			{
-				echo '<p class="success">' . esc_html_e ('Se ha Cambiado correctamente la contraseña.', 'zentrygate') . '</p>';
-				// echo '<p><a href="' . get_permalink () . '">' . esc_html__ ('Volver al inicio de sesión', 'zentrygate') . '</a></p>';
+				echo '<p class="success">' . esc_html__ ('Se ha Cambiado correctamente la contraseña.', 'zentrygate') . '</p>';
 				self::renderLoginForm ();
 				return;
 			}
 
 			if (self::sendPasswordResetToken ($email))
 			{
-				echo '<p class="success">' . esc_html_e ('Se ha enviado un enlace de recuperación a tu correo electrónico.', 'zentrygate') . '</p>';
+				echo '<p class="success">' . esc_html__ ('Se ha enviado un enlace de recuperación a tu correo electrónico.', 'zentrygate') . '</p>';
 			}
 
 			self::renderRecoveryCangepasswordForm ();
@@ -730,20 +671,19 @@ class Auth
 	public static function renderRecoveryAskEmailForm (): void
 	{
 		?>
-    <form method="get" class="zg-recovery-ask-email-form" aria-labelledby="zg-recovery-title" action="<?=PLugin::$permalink?>">
-    <input type="hidden" name="zg_action" value="pass_recovery">
-        <?php
-		// Nonce para seguridad
+        <form method="get" class="zg-recovery-ask-email-form" aria-labelledby="zg-recovery-title" action="<?=PLugin::$permalink?>">
+            <input type="hidden" name="zg_action" value="pass_recovery">
+            <?php
 		wp_nonce_field ('zg_pass_recovery_action', 'zg_pass_recovery_nonce');
 		?>
-        <div class="zg-form-header">
-            <h2 id="zg-recovery-title"><?php
+            <div class="zg-form-header">
+                <h2 id="zg-recovery-title"><?php
 
-		esc_html_e ('Recuperar contraseña', 'zentrygate');
+esc_html_e ('Recuperar contraseña', 'zentrygate');
 		?></h2>
-        </div>
-        <div class="zg-form-body">
-            <?php
+            </div>
+            <div class="zg-form-body">
+                <?php
 		$page_id = intval (get_option ('zg_recovery_form_page'));
 		if ($page_id)
 		{
@@ -751,52 +691,42 @@ class Auth
 		}
 		else
 		{
-
 			esc_html_e ('Introduce tu correo electrónico para recibir un enlace de recuperación.', 'zentrygate');
 		}
 		?>
-            <label for="zg_recover_email">
-                <?php
+                <label for="zg_recover_email">
+                    <?php
 
-		esc_html_e ('Correo electrónico', 'zentrygate');
+esc_html_e ('Correo electrónico', 'zentrygate');
 		?>
-                <input
-                    type="email"
-                    id="zg_recover_email"
-                    name="zg_recover_email"
-                    placeholder="<?php
+                    <input
+                        type="email"
+                        id="zg_recover_email"
+                        name="zg_recover_email"
+                        placeholder="<?php
 
-		esc_attr_e ('ejemplo@correo.com', 'zentrygate');
+esc_attr_e ('ejemplo@correo.com', 'zentrygate');
 		?>"
-                    required
-                    aria-required="true"
-                >
-            </label>
-        </div>
-        <div class="zg-form-footer">
-            <button
-                type="submit"
-                class="button button-primary"
-            >
-                <?php
+                        required
+                        aria-required="true"
+                    >
+                </label>
+            </div>
+            <div class="zg-form-footer">
+                <button type="submit" class="button button-primary">
+                    <?php
 
-		esc_html_e ('Enviar enlace', 'zentrygate');
+esc_html_e ('Enviar enlace', 'zentrygate');
 		?>
-            </button>
-        </div>
-    </form>
-    <?php
+                </button>
+            </div>
+        </form>
+        <?php
 	}
 
 
 	/**
 	 * Comprueba si un token sigue siendo válido, dado el momento de solicitud.
-	 *
-	 * @param string|null $resetRequestedAt
-	 *        	Fecha de solicitud en formato 'Y-m-d H:i:s' o null.
-	 * @param int $intervalSec
-	 *        	Intervalo de validez en segundos.
-	 * @return bool True si el token aún no ha expirado.
 	 */
 	private static function isStillValidToken (?string $resetRequestedAt, int $intervalSec): bool
 	{
@@ -835,9 +765,6 @@ class Auth
 
 	/**
 	 * Genera o reenvía el token de recuperación y envía el email.
-	 *
-	 * @param string $email
-	 * @return bool
 	 */
 	public static function sendPasswordResetToken (string $email): bool
 	{
@@ -853,17 +780,17 @@ class Auth
 			return false;
 		}
 
-		// Rate‐limit: avoid sending too many reset requests
+		// Rate‐limit: evitar envíos demasiado frecuentes
 		if (self::isStillValidToken ($user ['resetRequestedAt'], self::RESET_TOKEN_COOL_DOWN * MINUTE_IN_SECONDS))
 		{
 			return false;
 		}
 		else
 		{
-			// We have returned if the token was still valid, so now we know it is expired or not existing.
+			// Token nuevo
 			$token = bin2hex (random_bytes (32));
 
-			// 4. Guardar token + timestamp de solicitud
+			// Guardar token + timestamp de solicitud
 			$now = current_time ('mysql');
 			$updated = $wpdb->update ("{$wpdb->prefix}zgUsers", [ 'resetToken' => $token, 'resetRequestedAt' => $now], [ 'email' => $email], [ '%s', '%s'], [ '%s']);
 			if (false === $updated)
@@ -872,7 +799,7 @@ class Auth
 			}
 		}
 
-		// 5. Envío de email. Es get, así que el permalink es perfecto
+		// Envío de email
 		$emailEncoded = rtrim (strtr (base64_encode ($email), '+/', '-_'), '=');
 		$reset_link = add_query_arg ([ 'zg_action' => 'pass-reset', 'zg_recover_email' => $emailEncoded, 'token' => $token], get_permalink ());
 		$subject = sprintf (__ ('Recupera tu contraseña en %s', 'zentrygate'), wp_specialchars_decode (get_bloginfo ('name'), ENT_QUOTES));
@@ -886,166 +813,158 @@ class Auth
 	public static function renderAskUserCheckEmail (): void
 	{
 		?>
-    <div class="zg-notice zg-notice-success" role="alert" aria-live="polite" aria-labelledby="zg-check-email-title">
-        <strong id="zg-check-email-title">
-            <?php
-
-		esc_html_e ('Registro guardado', 'zentrygate');
-		?>
-        </strong>
-        <p>
-            <?php
-
-		esc_html_e ('Para completar tu registro, tenemos que validar tu correo electrónico. Haz clic en el enlace de verificación que te hemos enviado por email.', 'zentrygate');
-		?>
-        </p>
-        <p>
-            <?php
-
-		esc_html_e ('Si no lo ves, revisa la carpeta de correo no deseado.', 'zentrygate');
-		?>
-        </p>
-        
-        <p class="zg-auth-links">
-            <a href="<?=esc_url (add_query_arg ('zg_action', 'login'));?>">
+        <div class="zg-notice zg-notice-success" role="alert" aria-live="polite" aria-labelledby="zg-check-email-title">
+            <strong id="zg-check-email-title">
                 <?php
 
-		esc_html_e ('Ir a pantalla de login', 'zentrygate');
+esc_html_e ('Registro guardado', 'zentrygate');
 		?>
-            </a>
-        </p>
-        
-    </div>
-    <?php
+            </strong>
+            <p>
+                <?php
+
+esc_html_e ('Registro completado. Es necesario validar el login.', 'zentrygate');
+		?>
+            </p>
+
+            <p class="zg-auth-links">
+                <a href="<?=esc_url (add_query_arg ('zg_action', 'login'));?>">
+                    <?php
+
+esc_html_e ('Ir a pantalla de login', 'zentrygate');
+		?>
+                </a>
+            </p>
+
+        </div>
+        <?php
 	}
 
 
 	public static function renderVerificationSuccess (): void
 	{
 		?>
-    <div class="zg-notice zg-notice-success" role="alert" aria-live="polite" aria-labelledby="zg-verification-success-title">
-        <strong id="zg-verification-success-title">
-            <?php
-
-		esc_html_e ('Cuenta verificada', 'zentrygate');
-		?>
-        </strong>
-        <p>
-            <?php
-
-		esc_html_e ('Tu cuenta ha sido verificada correctamente. Ya puedes iniciar sesión.', 'zentrygate');
-		?>
-        </p>
-        <p>
-            <a href="<?=esc_url (add_query_arg ('zg_action', 'login'));?>">
+        <div class="zg-notice zg-notice-success" role="alert" aria-live="polite" aria-labelledby="zg-verification-success-title">
+            <strong id="zg-verification-success-title">
                 <?php
 
-		esc_html_e ('Ir al inicio de sesión', 'zentrygate');
+esc_html_e ('Cuenta verificada', 'zentrygate');
 		?>
-            </a>
-        </p>
-    </div>
-    <?php
+            </strong>
+            <p>
+                <?php
+
+esc_html_e ('Tu cuenta ha sido verificada correctamente. Ya puedes iniciar sesión.', 'zentrygate');
+		?>
+            </p>
+            <p>
+                <a href="<?=esc_url (add_query_arg ('zg_action', 'login'));?>">
+                    <?php
+
+esc_html_e ('Ir al inicio de sesión', 'zentrygate');
+		?>
+                </a>
+            </p>
+        </div>
+        <?php
 	}
 
 
 	public static function renderPasswordResetSuccess (): void
 	{
 		?>
-    <div class="zg-notice zg-notice-success" role="alert" aria-live="polite" aria-labelledby="zg-verification-success-title">
-        <strong id="zg-verification-success-title">
-            <?php
-
-		esc_html_e ('Password cambiada', 'zentrygate');
-		?>
-        </strong>
-        <p>
-            <?php
-
-		esc_html_e ('Has cambiado la contraseña. Ya puedes iniciar sesión con la nueva.', 'zentrygate');
-		?>
-        </p>
-        <p>
-            <a href="<?=esc_url (add_query_arg ('zg_action', 'login'));?>">
+        <div class="zg-notice zg-notice-success" role="alert" aria-live="polite" aria-labelledby="zg-verification-success-title">
+            <strong id="zg-verification-success-title">
                 <?php
 
-		esc_html_e ('Ir al inicio de sesión', 'zentrygate');
+esc_html_e ('Password cambiada', 'zentrygate');
 		?>
-            </a>
-        </p>
-    </div>
-    <?php
+            </strong>
+            <p>
+                <?php
+
+esc_html_e ('Has cambiado la contraseña. Ya puedes iniciar sesión con la nueva.', 'zentrygate');
+		?>
+            </p>
+            <p>
+                <a href="<?=esc_url (add_query_arg ('zg_action', 'login'));?>">
+                    <?php
+
+esc_html_e ('Ir al inicio de sesión', 'zentrygate');
+		?>
+                </a>
+            </p>
+        </div>
+        <?php
 	}
 
 
 	public static function renderPassResetFailed (): void
 	{
 		?>
-    <div class="zg-notice zg-notice-error" role="alert" aria-live="assertive" aria-labelledby="zg-verification-failed-title">
-        <strong id="zg-verification-failed-title">
-            <?php
-
-		esc_html_e ('Enlace caducado', 'zentrygate');
-		?>
-        </strong>
-        <p>
-            <?php
-
-		esc_html_e ('El enlace de cambio de contraseña no es válido o ha expirado. Por favor, solicita un nuevo enlace.', 'zentrygate');
-		?>
-        </p>
-        <p class="zg-auth-links">
-            <a href="<?=esc_url (add_query_arg ('zg_action', 'register'));?>">
+        <div class="zg-notice zg-notice-error" role="alert" aria-live="assertive" aria-labelledby="zg-verification-failed-title">
+            <strong id="zg-verification-failed-title">
                 <?php
 
-		esc_html_e ('Reintentar registrarse', 'zentrygate');
+esc_html_e ('Enlace caducado', 'zentrygate');
 		?>
-            </a>
-        </p>
-    </div>
-    <?php
+            </strong>
+            <p>
+                <?php
+
+esc_html_e ('El enlace de cambio de contraseña no es válido o ha expirado. Por favor, solicita un nuevo enlace.', 'zentrygate');
+		?>
+            </p>
+            <p class="zg-auth-links">
+                <a href="<?=esc_url (add_query_arg ('zg_action', 'register'));?>">
+                    <?php
+
+esc_html_e ('Reintentar registrarse', 'zentrygate');
+		?>
+                </a>
+            </p>
+        </div>
+        <?php
 	}
 
 
 	public static function renderVerificationFailed (): void
 	{
 		?>
-    <div class="zg-notice zg-notice-error" role="alert" aria-live="assertive" aria-labelledby="zg-verification-failed-title">
-        <strong id="zg-verification-failed-title">
-            <?php
-
-		esc_html_e ('Verificación fallida', 'zentrygate');
-		?>
-        </strong>
-        <p>
-            <?php
-
-		esc_html_e ('El enlace de verificación no es válido o ha expirado. Por favor, solicita un nuevo enlace.', 'zentrygate');
-		?>
-        </p>
-        <p class="zg-auth-links">
-            <a href="<?=esc_url (add_query_arg ('zg_action', 'register'));?>">
+        <div class="zg-notice zg-notice-error" role="alert" aria-live="assertive" aria-labelledby="zg-verification-failed-title">
+            <strong id="zg-verification-failed-title">
                 <?php
 
-		esc_html_e ('Reintentar registrarse', 'zentrygate');
+esc_html_e ('Verificación fallida', 'zentrygate');
 		?>
-            </a>
-        </p>
-    </div>
-    <?php
+            </strong>
+            <p>
+                <?php
+
+esc_html_e ('El enlace de verificación no es válido o ha expirado. Por favor, solicita un nuevo enlace.', 'zentrygate');
+		?>
+            </p>
+            <p class="zg-auth-links">
+                <a href="<?=esc_url (add_query_arg ('zg_action', 'register'));?>">
+                    <?php
+
+esc_html_e ('Reintentar registrarse', 'zentrygate');
+		?>
+                </a>
+            </p>
+        </div>
+        <?php
 	}
 
 	/**
 	 * Esquema configurable de campos extra de registro.
-	 * En el futuro se cargará desde BBDD/opciones.
-	 * name: etiqueta visible; tag: clave en otherData; type: text|tel|email|date|textarea|checkbox|select|multiselect
 	 */
 	protected static string $schemaJson = <<<JSON
 	[
 	    {"name":"DNI/NIE","tag":"nif","type":"text","required":true},
-		{"name":"Empresa","tag":"org","type":"text","required":true},
-		{"name":"Cargo","tag":"role","type":"text","required":true},
-		{"name":"Teléfono","tag":"phone","type":"tel","required":true}
+	    {"name":"Empresa","tag":"org","type":"text","required":true},
+	    {"name":"Cargo","tag":"role","type":"text","required":true},
+	    {"name":"Teléfono","tag":"phone","type":"tel","required":true}
 	]
 	JSON;
 
@@ -1065,10 +984,7 @@ class Auth
 	 */
 	public static function renderRegisterForm (bool $hasOldData = false): void
 	{
-		// Esquema configurable en JSON (futuro: cargar de opciones/BBDD)
 		$extraFields = self::getRegisterSchemaArray ();
-
-		// Helpers locales para IDs/atributos seguros
 
 		$isChecked = function (string $name): bool
 		{
@@ -1077,16 +993,13 @@ class Auth
 
 		$redirectTo = esc_url (add_query_arg ([ 'zg_action' => 'register'], get_permalink ()));
 		$actionUrl = esc_url (admin_url ('admin-post.php'));
-
 		?>
         <form method="post" class="zg-register-form" aria-labelledby="zg-register-title" novalidate action="<?=$actionUrl?>">
-        <input type="hidden" name="action" value="zg_register">
-        <input type="hidden" name="zg_action" value="register">
-        <input type="hidden" name="redirect_to" value="<?=$redirectTo;?>">
-    
-            
+            <input type="hidden" name="action" value="zg_register">
+            <input type="hidden" name="zg_action" value="register">
+            <input type="hidden" name="redirect_to" value="<?=$redirectTo;?>">
 
-            <h2 id="zg-register-title"><?=esc_html_e ('Introduce tus datos para registrarte', 'zentrygate');?></h2>
+            <h2 id="zg-register-title"><?=esc_html__ ('Introduce tus datos para registrarte', 'zentrygate');?></h2>
 
             <?php
 		$old = [ ];
@@ -1097,7 +1010,7 @@ class Auth
 
 			if (! empty ($errors))
 			{
-				self::renderErrors ($errors); // pinta tu bloque de errores
+				self::renderErrors ($errors);
 			}
 		}
 
@@ -1108,46 +1021,40 @@ class Auth
 		}
 		wp_nonce_field ('zg_register_action', 'zg_register_nonce', false);
 		?>
-		
-		
 
             <div class="zg-form-body">
-                <!-- Nombre (mínimo, fuera de JSON) -->
                 <label for="zg_reg_name">
-                    <?=esc_html_e ('Nombre y apellidos', 'zentrygate');?>
+                    <?=esc_html__ ('Nombre y apellidos', 'zentrygate');?>
                     <input
                         type="text"
                         id="zg_reg_name"
                         name="name"
                         value="<?=isset ($old ['name']) ? esc_attr (wp_unslash ($old ['name'])) : '';?>"
-                        placeholder="<?=esc_attr_e ('Nombre y apellidos', 'zentrygate');?>"
+                        placeholder="<?=esc_attr__ ('Nombre y apellidos', 'zentrygate');?>"
                         required
                         aria-required="true"
                         autocomplete="name"
                     >
                 </label>
 
-                <!-- Email (mínimo, fuera de JSON) -->
                 <label for="zg_reg_email">
-                    <?=esc_html_e ('Correo electrónico', 'zentrygate');?>
+                    <?=esc_html__ ('Correo electrónico', 'zentrygate');?>
                     <input
                         type="email"
                         id="zg_reg_email"
                         name="email"
                         value="<?=isset ($old ['email']) ? esc_attr (wp_unslash ($old ['email'])) : '';?>"
-                        placeholder="<?=esc_attr_e ('ejemplo@correo.com', 'zentrygate');?>"
+                        placeholder="<?=esc_attr__ ('ejemplo@correo.com', 'zentrygate');?>"
                         required
                         aria-required="true"
                         autocomplete="email"
                     >
                 </label>
-                
-                
+
                 <label for="zg_hp_name" id="zg_hp_label">
                     <?php
-		// honeypot field, should be hidden with CSS
-		echo 'Hall Name';
-		?>
+
+echo 'Hall Name'; // honeypot ?>
                     <input
                         id="zg_hp_name"
                         name="zg_hp_name"
@@ -1156,9 +1063,8 @@ class Auth
                     >
                 </label>
 
-                <!-- Password + confirmación (mínimo, fuera de JSON) -->
                 <label for="zg_reg_password">
-                    <?=esc_html_e ('Contraseña', 'zentrygate');?>
+                    <?=esc_html__ ('Contraseña', 'zentrygate');?>
                     <input
                         type="password"
                         id="zg_reg_password"
@@ -1170,7 +1076,7 @@ class Auth
                     >
                 </label>
                 <label for="zg_reg_password2">
-                    <?=esc_html_e ('Repite la contraseña', 'zentrygate');?>
+                    <?=esc_html__ ('Repite la contraseña', 'zentrygate');?>
                     <input
                         type="password"
                         id="zg_reg_password2"
@@ -1183,7 +1089,6 @@ class Auth
                 </label>
 
                 <?php
-		// Campos extra (configurables por JSON)
 		if (! empty ($extraFields))
 		{
 			foreach ($extraFields as $cfg)
@@ -1199,7 +1104,6 @@ class Auth
 					continue;
 				}
 
-				// El nombre de POST de estos campos va en 'other[...]'
 				$postName = 'other[' . $tag . ']';
 				$value = isset ($old ['other'] [$tag]) ? wp_unslash ($old ['other'] [$tag]) : '';
 
@@ -1208,18 +1112,17 @@ class Auth
 				switch ($type)
 				{
 					case 'textarea':
-						echo '<label for="' . esc_attr ($id) . '">' . esc_html ($label) . ($req ? ' *' : '') . '<textarea id="' . esc_attr ($id) . '" name="' . esc_attr ($postName) . '" ' . 'rows="3">' . esc_textarea (is_string ($value) ? $value : '') . '</textarea></label>';
+						echo '<label for="' . esc_attr ($id) . '">' . esc_html ($label) . ($req ? ' *' : '') . '<textarea id="' . esc_attr ($id) . '" name="' . esc_attr ($postName) . '" rows="3">' . esc_textarea (is_string ($value) ? $value : '') . '</textarea></label>';
 						break;
 
 					case 'checkbox':
-						// Para checkbox usamos valor "1"
 						$checked = $isChecked ($postName);
 						echo '<label class="zg-checkbox">' . '<input type="checkbox" id="' . esc_attr ($id) . '" name="' . esc_attr ($postName) . '" value="1" ' . ($checked ? 'checked ' : '') . '>' . ' ' . esc_html ($label) . ($req ? ' *' : '') . '</label>';
 						break;
 
 					case 'select':
 						$choices = isset ($cfg ['choices']) && is_array ($cfg ['choices']) ? $cfg ['choices'] : [ ];
-						echo '<label for="' . esc_attr ($id) . '">' . esc_html ($label) . ($req ? ' *' : '') . '<select id="' . esc_attr ($id) . '" name="' . esc_attr ($postName) . '" ' . '>';
+						echo '<label for="' . esc_attr ($id) . '">' . esc_html ($label) . ($req ? ' *' : '') . '<select id="' . esc_attr ($id) . '" name="' . esc_attr ($postName) . '">';
 						echo '<option value="">' . esc_html__ ('-- Selecciona --', 'zentrygate') . '</option>';
 						foreach ($choices as $opt)
 						{
@@ -1232,8 +1135,7 @@ class Auth
 					case 'multiselect':
 						$choices = isset ($cfg ['choices']) && is_array ($cfg ['choices']) ? $cfg ['choices'] : [ ];
 						$vals = isset ($old ['other'] [$tag]) && is_array ($old ['other'] [$tag]) ? array_map ('wp_unslash', $old ['other'] [$tag]) : [ ];
-						// Para multi, usamos name="other[tag][]" y multiple
-						echo '<label for="' . esc_attr ($id) . '">' . esc_html ($label) . ($req ? ' *' : '') . '<select id="' . esc_attr ($id) . '" name="other[' . esc_attr ($tag) . '][]" multiple ' . ' size="4">';
+						echo '<label for="' . esc_attr ($id) . '">' . esc_html ($label) . ($req ? ' *' : '') . '<select id="' . esc_attr ($id) . '" name="other[' . esc_attr ($tag) . '][]" multiple size="4">';
 						foreach ($choices as $opt)
 						{
 							$sel = in_array ((string) $opt, array_map ('strval', $vals), true) ? ' selected' : '';
@@ -1243,8 +1145,7 @@ class Auth
 						break;
 
 					default:
-						// text | email | tel | date ...
-						echo '<label for="' . esc_attr ($id) . '">' . esc_html ($label) . ($req ? ' *' : '') . '<input type="' . esc_attr ($type) . '"' . ' id="' . esc_attr ($id) . '"' . ' name="' . esc_attr ($postName) . '"' . ' value="' . esc_attr (is_string ($value) ? $value : '') . '" ' . '>' . '</label>';
+						echo '<label for="' . esc_attr ($id) . '">' . esc_html ($label) . ($req ? ' *' : '') . '<input type="' . esc_attr ($type) . '" id="' . esc_attr ($id) . '" name="' . esc_attr ($postName) . '" value="' . esc_attr (is_string ($value) ? $value : '') . '">' . '</label>';
 						break;
 				}
 
@@ -1256,16 +1157,16 @@ class Auth
 
             <div class="zg-form-footer">
                 <button type="submit" name="zg_register_submit" class="button button-primary">
-                    <?=esc_html_e ('Enviar', 'zentrygate');?>
+                    <?=esc_html__ ('Enviar', 'zentrygate');?>
                 </button>
 
                 <p class="zg-auth-links">
                     <a href="<?=esc_url (add_query_arg ('zg_action', 'login'));?>">
-                        <?=esc_html_e ('¿Ya tienes cuenta? Inicia sesión', 'zentrygate');?>
+                        <?=esc_html__ ('¿Ya tienes cuenta? Inicia sesión', 'zentrygate');?>
                     </a>
                     &nbsp;·&nbsp;
                     <a href="<?=esc_url (add_query_arg ('zg_action', 'pass_recovery'));?>">
-                        <?=esc_html_e ('¿Olvidaste tu contraseña?', 'zentrygate');?>
+                        <?=esc_html__ ('¿Olvidaste tu contraseña?', 'zentrygate');?>
                     </a>
                 </p>
             </div>
@@ -1302,7 +1203,7 @@ class Auth
 
 	public static function handleRegisterPostEntryPoint (): void
 	{
-		$ok = self::handleRegisterPost (); // valida nonce, inserta, envía email...
+		$ok = self::handleRegisterPost ();
 		$redirect = isset ($_POST ['redirect_to']) ? esc_url_raw (wp_unslash ($_POST ['redirect_to'])) : home_url ('/');
 		if ($ok)
 		{
@@ -1321,26 +1222,16 @@ class Auth
 
 	/**
 	 * Procesa el POST del registro.
-	 * Devuelve true si el usuario se creó (y se intentó enviar el email); false si hubo errores.
 	 */
 	public static function handleRegisterPost (): bool
 	{
 		self::$lastErrors = [ ];
 
-		// 1) Nonce
-		$nonce = isset ($_POST ['zg_register_nonce']) ? wp_unslash ($_POST ['zg_register_nonce']) : '';
-		if (! $nonce || ! wp_verify_nonce ($nonce, 'zg_register_action'))
-		{
-			self::$lastErrors [] = __ ('La sesión ha caducado. Por favor, recarga la página e inténtalo de nuevo.', 'zentrygate');
-			return false;
-		}
-
-		// 1.1) Honeypot (campo oculto)
+		// 1.1) Honeypot
 		if (isset ($_POST ['zg_hp_name']) && trim ((string) $_POST ['zg_hp_name']) !== '')
 		{
-			// Campo oculto rellenado: bot
 			self::$lastErrors [] = __ ('Error en el formulario. Por favor, recarga la página e inténtalo de nuevo.', 'zentrygate');
-			return true; // Decimos que se ha enviado un email para no dar pistas al bot
+			return true; // respuesta neutra
 		}
 
 		// 2) Campos mínimos
@@ -1366,9 +1257,7 @@ class Auth
 			self::$lastErrors [] = __ ('Las contraseñas no coinciden.', 'zentrygate');
 		}
 
-		// YAGNI: Validación de fortaleza de la contraseña (opcional)
-
-		// 3) Validar campos requeridos del JSON (self::$schemaJson)
+		// 3) Validar campos requeridos del JSON
 		$schema = self::getRegisterSchemaArray ();
 		$otherRaw = (isset ($_POST ['other']) && is_array ($_POST ['other'])) ? $_POST ['other'] : [ ];
 		$otherClean = [ ];
@@ -1447,61 +1336,41 @@ class Auth
 			return false;
 		}
 
-		// 5) Preparar inserción
+		// 5) Insertar
 		$passwordHash = password_hash ($password, PASSWORD_DEFAULT);
 		$verifyToken = bin2hex (random_bytes (32));
 		$unsubscribeToken = bin2hex (random_bytes (32));
-		$status = 'active'; // hoy activo, en el futuro podrás usar 'pending'
-		$isEnabled = 0; // no habilitado hasta verificar email
+		$status = 'active';
+		$isEnabled = 1; // habilitado (según tu configuración actual)
 		$otherJson = wp_json_encode ($otherClean, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-		$data = [ 'email' => $email, 'name' => $name, 'passwordHash' => $passwordHash, 'status' => $status, 'isAdmin' => 0, 'isEnabled' => $isEnabled, 'otherData' => $otherJson, 'verifyToken' => $verifyToken, 'unsubscribeToken' => $unsubscribeToken, 'failedLoginCount' => 0 // emailVerifiedAt = NULL por defecto
-		                                                                                                                                                                                                                                                                           // lockedUntil = NULL por defecto
-		];
+		$data = [ 'email' => $email, 'name' => $name, 'passwordHash' => $passwordHash, 'status' => $status, 'isAdmin' => 0, 'isEnabled' => $isEnabled, 'otherData' => $otherJson, 'verifyToken' => $verifyToken, 'unsubscribeToken' => $unsubscribeToken, 'failedLoginCount' => 0];
 		$format = [ '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%d'];
 
 		$ok = $wpdb->insert ($table, $data, $format);
 		if (! $ok)
 		{
-			// Mensaje genérico + detalle técnico en debug si quieres
 			self::$lastErrors [] = __ ('No se pudo crear la cuenta en este momento. Inténtalo más tarde.', 'zentrygate');
 			if (! empty ($wpdb->last_error))
 			{
-				// error técnico opcional para log
 				error_log ('[ZentryGate] handleRegisterPost insert error: ' . $wpdb->last_error);
 			}
 			return false;
 		}
 
-		// 6) Enviar email de verificación
-		$verifyUrl = $_POST ['redirect_to'] ?? get_permalink ();
-		$verifyUrl = esc_url_raw ($verifyUrl);
-
-		$emailEncoded = rtrim (strtr (base64_encode ($email), '+/', '-_'), '=');
-
-		$verifyUrl = add_query_arg ([ 'zg_action' => 'verify', 'token' => $verifyToken, 'e' => $emailEncoded], $verifyUrl);
-
-		$blogname = wp_specialchars_decode (get_bloginfo ('name'), ENT_QUOTES);
-		$subject = sprintf (__ ('Confirma tu cuenta en %s', 'zentrygate'), $blogname);
-
-		// Cuerpo HTML sencillo
-		$body = '<p>' . sprintf (__ ('Hola %s,', 'zentrygate'), esc_html ($name)) . '</p>';
-		$body .= '<p>' . esc_html__ ('Gracias por registrarte a las jornadas de la abogacía general de la comunidad de Madrid. Para validar tu correo, haz clic en el siguiente enlace:', 'zentrygate') . '</p>';
-		$body .= '<p><a href="' . esc_url ($verifyUrl) . '">' . esc_html ($verifyUrl) . '</a></p>';
-		$body .= '<p>' . esc_html__ ('Si no has solicitado esta cuenta, puedes ignorar este mensaje.', 'zentrygate') . '</p>';
-
-		$headers = [ 'Content-Type: text/html; charset=UTF-8'];
-
-		$sent = wp_mail ($email, $subject, $body, $headers);
-
-		// Nota: si el email falla, el usuario queda creado pero no habilitado.
-		// Puedes ofrecer una acción “reenviar verificación” desde la UI.
-		if (! $sent)
+		// Cargar el usuario recién creado y rellenar userData
+		$user = $wpdb->get_row ($wpdb->prepare ("SELECT * FROM {$wpdb->prefix}zgUsers WHERE email = %s", $email), ARRAY_A);
+		if ($user && $user ['isEnabled'])
 		{
-			error_log ('[ZentryGate] handleRegisterPost: fallo al enviar email de verificación a ' . $email);
-			// No lo marcamos como error bloqueante para evitar duplicidades de alta.
-			// Tu pantalla de success puede mostrar "Te hemos enviado un email... Si no lo recibes, podrás reenviarlo."
+			self::fillUserData ($user);
 		}
+
+		// ✅ Tras registro, dejamos cookie aceptada pero SIN login automático (como flujo mínimo).
+		// Si quisieras auto-login, sustituye por nonce@id (ver notas en el mensaje anterior).
+		self::saveCookieValue ('@');
+
+		// Redirección post-registro (como tenías)
+		wp_redirect (home_url ('/inscripcion/'));
 
 		return true;
 	}

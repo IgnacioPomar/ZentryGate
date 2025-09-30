@@ -71,6 +71,7 @@ class Install
     	lastLogin DATETIME NULL DEFAULT NULL,
     	resetToken CHAR(64) NULL DEFAULT NULL,
     	resetRequestedAt DATETIME NULL DEFAULT NULL,
+        nonceHash CHAR(64) NOT NULL,
     	verifyToken CHAR(64) NULL DEFAULT NULL,
     	unsubscribeToken CHAR(64) NULL DEFAULT NULL,
     	failedLoginCount INT UNSIGNED NOT NULL DEFAULT 0,

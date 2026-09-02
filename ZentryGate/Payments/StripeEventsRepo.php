@@ -65,7 +65,7 @@ class StripeEventsRepo
 	}
 
 
-	public static function markFailed (string $eventId, int $httpStatusSent = 200, string $error): void
+	public static function markFailed (string $eventId, int $httpStatusSent = 200, string $error = ""): void
 	{
 		global $wpdb;
 		$table = self::table ();

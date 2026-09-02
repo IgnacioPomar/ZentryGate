@@ -23,7 +23,7 @@ if (! defined ('ZENTRYGATE_DIR'))
 // TODO: Migrar a POO
 // TODO: cambio de contraseña del admin panel separarlo del panel de usuario estandar
 
-if (is_admin ())
+if (is_admin () || (defined ('WP_CLI') && WP_CLI))
 {
 	require_once ZENTRYGATE_DIR . 'admin/eventDetails.php';
 

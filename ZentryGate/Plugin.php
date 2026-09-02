@@ -30,6 +30,12 @@ class Plugin
 		add_action ('admin_post_zg_register', [ \ZentryGate\Auth::class, 'handleRegisterPostEntryPoint']); // logados
 
 		// add plugin style
+		add_action ('wp_enqueue_scripts', [ self::class, 'enqueueStyles']);
+		add_action ('admin_enqueue_scripts', [ self::class, 'enqueueStyles']);
+	}
+
+	public static function enqueueStyles ()
+	{
 		if (! wp_style_is ('zentrygate-styles', 'enqueued'))
 		{
 			wp_enqueue_style ('zentrygate-styles', ZENTRYGATE_URL . 'css/zentrygate.css', [ ], ZENTRYGATE_VERSION_PLUGIN);

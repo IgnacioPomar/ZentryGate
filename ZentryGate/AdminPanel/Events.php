@@ -38,8 +38,9 @@ class Events
 				if (! $this->handleEditEventAction ())
 				{
 					$executed = true;
-					echo '<h2>Editar Evento</h2>';
+					echo '<div class="zg-admin-column">';
 					$this->renderEditEventPage ($eventId);
+					echo '</div>';
 				}
 				break;
 
@@ -58,10 +59,12 @@ class Events
 		if (! $executed)
 		{
 			echo '<h2>ZentryGate - Gestión de Eventos</h2>';
+			echo '<div class="zg-admin-column">';
 			$this->renderCreateEventForm ();
 			$this->renderDuplicateEventForm ();
 			$this->renderImportEventForm ();
 			$this->listCreatedEvents ();
+			echo '</div>';
 		}
 
 		echo '</div>';
@@ -297,8 +300,10 @@ class Events
 	{
 		$nonce = wp_create_nonce ('zg_events_nonce');
 		?>
-        <h3>Crear Evento</h3>
-        <form method="post" style="margin-bottom:20px;">
+        <div class="postbox">
+        <h2 class="hndle"><span>Crear Evento</span></h2>
+        <div class="inside">
+        <form method="post">
             <input type="hidden" name="_zg_nonce" value="<?php
 
 		echo esc_attr ($nonce);
@@ -307,6 +312,8 @@ class Events
             <input type="date" name="eventDate" required>
             <button type="submit" name="zg_create_event" class="button button-primary">➕ Crear</button>
         </form>
+        </div>
+        </div>
         <?php
 	}
 
@@ -324,8 +331,10 @@ class Events
 
 		$nonce = wp_create_nonce ('zg_events_nonce');
 		?>
-        <h3>Duplicar Evento</h3>
-        <form method="post" style="margin-bottom:20px;">
+        <div class="postbox">
+        <h2 class="hndle"><span>Duplicar Evento</span></h2>
+        <div class="inside">
+        <form method="post">
             <input type="hidden" name="_zg_nonce" value="<?php
 
 		echo esc_attr ($nonce);
@@ -353,6 +362,8 @@ class Events
             <input type="date" name="eventDate" required>
             <button type="submit" name="zg_duplicate_event" class="button button-primary">📄 Duplicar</button>
         </form>
+        </div>
+        </div>
         <?php
 	}
 
@@ -364,8 +375,10 @@ class Events
 	{
 		$nonce = wp_create_nonce ('zg_events_nonce');
 		?>
-        <h3>Importar Evento</h3>
-        <form method="post" enctype="multipart/form-data" style="margin-bottom:20px;">
+        <div class="postbox">
+        <h2 class="hndle"><span>Importar Evento</span></h2>
+        <div class="inside">
+        <form method="post" enctype="multipart/form-data">
             <input type="hidden" name="_zg_nonce" value="<?php
 
 		echo esc_attr ($nonce);
@@ -373,6 +386,8 @@ class Events
             <input type="file" name="zg_import_file" accept="application/json" required>
             <button type="submit" name="zg_import_event" class="button button-primary">⬆️ Importar</button>
         </form>
+        </div>
+        </div>
         <?php
 	}
 
@@ -385,7 +400,9 @@ class Events
 		global $wpdb;
 		$events = $wpdb->get_results ("SELECT * FROM {$wpdb->prefix}zgEvents ORDER BY date DESC");
 		?>
-        <h3>Eventos Creados</h3>
+        <div class="postbox">
+        <h2 class="hndle"><span>Eventos Creados</span></h2>
+        <div class="inside">
         <table class="widefat fixed striped">
             <thead><tr><th>Nombre</th><th>Fecha</th><th>Estado</th><th>Acciones</th></tr></thead>
             <tbody>
@@ -459,6 +476,8 @@ class Events
 		?>
             </tbody>
         </table>
+        </div>
+        </div>
         <?php
 	}
 
@@ -476,8 +495,10 @@ class Events
 
 		$nonce = wp_create_nonce ('zg_events_nonce');
 		?>
-        <h3>Editar Evento</h3>
-        <form method="post" style="margin-bottom:20px;">
+        <div class="postbox">
+        <h2 class="hndle"><span>Editar Evento</span></h2>
+        <div class="inside">
+        <form method="post">
             <input type="hidden" name="_zg_nonce" value="<?php
 
 		echo esc_attr ($nonce);
@@ -499,6 +520,8 @@ class Events
 		echo esc_url (add_query_arg ([ 'page' => 'zentrygate_events'], admin_url ('admin.php')));
 		?>" class="button">✖️ Cancelar</a>
         </form>
+        </div>
+        </div>
         <?php
 	}
 

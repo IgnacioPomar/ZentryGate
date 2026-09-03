@@ -17,6 +17,7 @@ class Users
 		self::handleUserActions ();
 
 		echo '<div class="wrap"><h2>ZentryGate - ' . esc_html__ ('Usuarios', 'zentrygate') . '</h2>';
+		echo '<div class="zg-admin-column">';
 
 		// ¿Edición individual?
 		if (isset ($_GET ['action']) && $_GET ['action'] === 'edit' && ! empty ($_GET ['email']))
@@ -30,6 +31,7 @@ class Users
 			self::listDisabledAdmins ();
 		}
 
+		echo '</div>';
 		echo '</div>';
 	}
 
@@ -128,11 +130,13 @@ class Users
 	private static function renderCreateAdminForm (): void
 	{
 		?>
-        <h3><?php
+        <div class="postbox">
+        <h2 class="hndle"><span><?php
 
 		echo esc_html__ ('Crear nuevo administrador', 'zentrygate');
-		?></h3>
-        <form method="post" style="margin-bottom:30px;">
+		?></span></h2>
+        <div class="inside">
+        <form method="post">
             <?php
 
 		wp_nonce_field ('zg_add_user_action', 'zg_add_user_nonce');
@@ -144,6 +148,8 @@ class Users
 		echo esc_attr__ ('Crear administrador', 'zentrygate');
 		?>">➕</button>
         </form>
+        </div>
+        </div>
         <?php
 	}
 
@@ -157,7 +163,9 @@ class Users
 		$table = $wpdb->prefix . 'zgUsers';
 		$users = $wpdb->get_results ($wpdb->prepare ("SELECT * FROM {$table} WHERE isAdmin = %d AND isEnabled = %d ORDER BY name", 1, 1));
 		?>
-        <h3><?=esc_html__ ('Administradores Activos', 'zentrygate');?></h3>
+        <div class="postbox">
+        <h2 class="hndle"><span><?=esc_html__ ('Administradores Activos', 'zentrygate');?></span></h2>
+        <div class="inside">
         <table class="widefat fixed striped">
             <thead><tr><th><?=esc_html_e ('Nombre', 'zentrygate');?></th><th><?=esc_html_e ('Email', 'zentrygate');?></th><th><?=esc_html_e ('Acciones', 'zentrygate');?></th></tr></thead>
             <tbody>
@@ -191,6 +199,8 @@ class Users
 		?>
             </tbody>
         </table>
+        </div>
+        </div>
         <?php
 	}
 
@@ -204,10 +214,12 @@ class Users
 		$table = $wpdb->prefix . 'zgUsers';
 		$users = $wpdb->get_results ($wpdb->prepare ("SELECT * FROM {$table} WHERE isAdmin = %d AND isEnabled = %d ORDER BY lastLogin DESC LIMIT 10", 1, 0));
 		?>
-        <h3><?php
+        <div class="postbox">
+        <h2 class="hndle"><span><?php
 
 		echo esc_html__ ('Administradores Deshabilitados Recientes', 'zentrygate');
-		?></h3>
+		?></span></h2>
+        <div class="inside">
         <table class="widefat fixed striped">
             <thead><tr><th><?=esc_html_e ('Nombre', 'zentrygate');?></th><th><?=esc_html_e ('Email', 'zentrygate');?></th><th><?=esc_html_e ('Acción', 'zentrygate');?></th></tr></thead>
             <tbody>
@@ -232,6 +244,8 @@ class Users
 		?>
             </tbody>
         </table>
+        </div>
+        </div>
         <?php
 	}
 
@@ -251,7 +265,9 @@ class Users
 			return;
 		}
 		?>
-        <h3><?=esc_html__ ('Modificando Administrador: ', 'zentrygate') . esc_html ($user->email);?></h3>
+        <div class="postbox">
+        <h2 class="hndle"><span><?=esc_html__ ('Modificando Administrador: ', 'zentrygate') . esc_html ($user->email);?></span></h2>
+        <div class="inside">
         <form action="<?=esc_url (admin_url ('admin-post.php'));?>" method="post">
             <?=wp_nonce_field ('zg_edit_user_action', 'zg_edit_user_nonce');?>
             <input type="hidden" name="action" value="zg_edit_user">
@@ -272,6 +288,8 @@ class Users
                 <a href="<?=esc_url (admin_url ('admin.php?page=zentrygate_users'));?>" class="button" title="<?=esc_attr_e ('Cancelar', 'zentrygate');?>">✖️</a>
             </p>
         </form>
+        </div>
+        </div>
         <?php
 	}
 

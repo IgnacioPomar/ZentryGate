@@ -458,19 +458,22 @@ function zg_handle_detail_event_deleterule (&$rules)
  */
 function zg_render_event_detail ($eventId, $sections, $rules)
 {
+	echo '<div class="zg-admin-column">';
+
 	// Volver al listado de eventos
 	echo '<a href="' . esc_url (admin_url ('admin.php?page=zentrygate_events')) . '" class="button">← Volver</a>';
 
 	// Secciones
-	zg_render_sections_form ($eventId);
 	zg_list_sections ($eventId, $sections);
+	zg_render_sections_form ($eventId);
 
 	// Reglas
 	if (! empty ($sections))
 	{
-		echo '<a href="' . esc_url (admin_url ('admin.php?page=zentrygate_events&action=detail&subaction=addrule&eventId=' . $eventId)) . '" class="button button-secondary" style="margin-top:10px;">➕ Añadir Regla</a>';
 		zg_list_rules ($eventId, $rules, $sections);
 	}
+
+	echo '</div>';
 }
 
 
@@ -482,13 +485,17 @@ function zg_render_event_detail ($eventId, $sections, $rules)
  */
 function zg_list_sections ($eventId, $sections)
 {
+	echo '<div class="postbox">';
+	echo '<h2 class="hndle"><span>Secciones</span></h2>';
+	echo '<div class="inside">';
+
 	if (empty ($sections))
 	{
 		echo '<p>No hay secciones.</p>';
-		return;
 	}
-	?>
-    <h4>Secciones</h4>
+	else
+	{
+		?>
     <table class="widefat fixed striped">
         <thead>
             <tr>
@@ -502,42 +509,45 @@ function zg_list_sections ($eventId, $sections)
         <tbody>
             <?php
 
-	foreach ($sections as $sec)
-	:
-		?>
+		foreach ($sections as $sec)
+		:
+			?>
                 <tr>
                     <td><?php
 
-		echo esc_html ($sec ['label']);
-		?></td>
+			echo esc_html ($sec ['label']);
+			?></td>
                     <td><?php
 
-		echo $sec ['capacity'] === 0 ? '∞' : esc_html ($sec ['capacity']);
-		?></td>
+			echo $sec ['capacity'] === 0 ? '∞' : esc_html ($sec ['capacity']);
+			?></td>
                     <td><?php
 
-		echo esc_html (number_format ($sec ['price'], 2));
-		?></td>
+			echo esc_html (number_format ($sec ['price'], 2));
+			?></td>
                     <td><?php
 
-		echo $sec ['isHidden'] ? 'Sí' : 'No';
-		?></td>
+			echo $sec ['isHidden'] ? 'Sí' : 'No';
+			?></td>
                     <td>
                         <a href="<?php
-		echo esc_url (admin_url ("admin.php?page=zentrygate_events&action=detail&subaction=editsection&eventId={$eventId}&sectionId=" . urlencode ($sec ['id'])));
-		?>" class="button" title="Editar sección">🖉</a>
-		<a href="<?php
-		echo esc_url (admin_url ("admin.php?page=zentrygate_events&action=detail&subaction=deletesection&eventId={$eventId}&sectionId=" . urlencode ($sec ['id'])));
-		?>" class="button" title="Eliminar sección">🗑</a>
+			echo esc_url (admin_url ("admin.php?page=zentrygate_events&action=detail&subaction=editsection&eventId={$eventId}&sectionId=" . urlencode ($sec ['id'])));
+			?>" class="button" title="Editar sección">🖉</a>
+			<a href="<?php
+			echo esc_url (admin_url ("admin.php?page=zentrygate_events&action=detail&subaction=deletesection&eventId={$eventId}&sectionId=" . urlencode ($sec ['id'])));
+			?>" class="button" title="Eliminar sección">🗑</a>
                     </td>
                 </tr>
             <?php
-	endforeach
-	;
-	?>
+		endforeach
+		;
+		?>
         </tbody>
     </table>
     <?php
+	}
+
+	echo '</div></div>';
 }
 
 
@@ -549,8 +559,10 @@ function zg_list_sections ($eventId, $sections)
 function zg_render_sections_form ($eventId)
 {
 	?>
-    <h4>Añadir Sección</h4>
-    <form method="post" style="margin-bottom:20px;">
+    <div class="postbox">
+    <h2 class="hndle"><span>Añadir Sección</span></h2>
+    <div class="inside">
+    <form method="post">
         <input type="hidden" name="eventId" value="<?php
 
 	echo esc_attr ($eventId);
@@ -561,6 +573,8 @@ function zg_render_sections_form ($eventId)
         <label><input type="checkbox" name="sectionHidden"> Oculto</label>
         <button type="submit" name="zg_add_section" class="button" title="Añadir sección">➕ Agregar</button>
     </form>
+    </div>
+    </div>
     <?php
 }
 
@@ -593,9 +607,12 @@ function zg_render_edit_section_form ($eventId, $sectionId)
 		return;
 	}
 	?>
-    <form method="post" style="margin-bottom:20px;">
+    <div class="zg-admin-column">
+    <div class="postbox">
+    <h2 class="hndle"><span>Editar Sección</span></h2>
+    <div class="inside">
+    <form method="post">
         <fieldset>
-            <legend>Editar Sección</legend>
 
             <input type="hidden" name="eventId" value="<?php
 
@@ -667,8 +684,12 @@ function zg_render_edit_section_form ($eventId, $sectionId)
             <button type="submit" name="zg_edit_section" class="button" title="Actualizar sección">
                 ✔️ Guardar
             </button>
+            <a href="<?=esc_url (admin_url ('admin.php?page=zentrygate_events&action=detail&eventId=' . $eventId));?>" class="button">✖️ Cancelar</a>
         </fieldset>
     </form>
+    </div>
+    </div>
+    </div>
     <?php
 }
 
@@ -698,10 +719,18 @@ function zg_render_edit_section_form ($eventId, $sectionId)
  */
 function zg_list_rules (int $eventId, array $ruleList, array $sections)
 {
+	$addRuleUrl = esc_url (admin_url ('admin.php?page=zentrygate_events&action=detail&subaction=addrule&eventId=' . $eventId));
+
+	echo '<div class="postbox">';
+	echo '<h2 class="hndle"><span>Reglas condicionales</span></h2>';
+	echo '<div class="inside">';
+	echo '<p><a href="' . $addRuleUrl . '" class="button button-secondary">➕ Añadir Regla</a></p>';
+
 	// Si no hay nada que listar
 	if (empty ($ruleList))
 	{
 		echo '<p>No hay reglas.</p>';
+		echo '</div></div>';
 		return;
 	}
 
@@ -723,7 +752,6 @@ function zg_list_rules (int $eventId, array $ruleList, array $sections)
 
 	// 2) Cabecera de tabla
 	?>
-    <h4>Reglas</h4>
     <table class="widefat fixed striped">
         <thead>
             <tr>
@@ -833,6 +861,8 @@ function zg_list_rules (int $eventId, array $ruleList, array $sections)
         </tbody>
     </table>
     <?php
+
+	echo '</div></div>';
 }
 
 
@@ -973,8 +1003,11 @@ function zg_render_rule_form (int $eventId, array $sections, ?array $ruleData = 
 
 	$actionName = $isEdit ? 'zg_edit_rule' : 'zg_add_rule';
 	?>
+    <div class="zg-admin-column">
+    <div class="postbox">
+    <h2 class="hndle"><span><?=$isEdit ? 'Editar regla' : 'Crear nueva regla';?></span></h2>
+    <div class="inside">
     <form method="post" class="zg-rule-form">
-        <h2><?=$isEdit ? 'Editar regla' : 'Crear nueva regla';?></h2>
         <input type="hidden" name="<?=esc_attr ($actionName);?>" value="1">
         <?php
 
@@ -1035,6 +1068,9 @@ function zg_render_rule_form (int $eventId, array $sections, ?array $ruleData = 
 	?>
         <a href="<?=esc_url (admin_url ('admin.php?page=zentrygate_events&action=detail&eventId=' . $eventId));?>" class="button-secondary" style="margin-left:10px;">← Volver</a>
     </form>
+    </div>
+    </div>
+    </div>
 
     <script>
     (function() {

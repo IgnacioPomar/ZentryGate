@@ -29,58 +29,66 @@ class Stripe
 		// Obtener valores actuales
 		$values = get_option (self::$optionKey, [ 'publishable' => '', 'secret' => '', 'zg_stripe_webhook_secret' => '']);
 
-		self::checkDependecncies ();
-
 		?>
-		
         <div class="wrap">
             <h1>Configurar Stripe</h1>
-            <form method="post" action="">
-                <?php
+            <div class="zg-admin-column">
+
+                <div class="postbox">
+                <h2 class="hndle"><span>Claves de la cuenta</span></h2>
+                <div class="inside">
+                    <form method="post" action="">
+                        <?php
 
 		wp_nonce_field ('zentrygate_stripe_save');
 		?>
 
-                <table class="form-table">
-                    <tr>
-                        <th scope="row"><label for="zg_stripe_publishable">Clave publicable</label></th>
-                        <td>
-                            <input type="text" name="zg_stripe_publishable" id="zg_stripe_publishable"
-                                   value="<?php
+                        <table class="form-table">
+                            <tr>
+                                <th scope="row"><label for="zg_stripe_publishable">Clave publicable</label></th>
+                                <td>
+                                    <input type="text" name="zg_stripe_publishable" id="zg_stripe_publishable"
+                                           value="<?php
 
 		echo esc_attr ($values ['publishable']);
 		?>"
-                                   class="regular-text" />
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row"><label for="zg_stripe_secret">Clave secreta</label></th>
-                        <td>
-                            <input type="password" name="zg_stripe_secret" id="zg_stripe_secret"
-                                   value="<?=esc_attr ($values ['secret']);?>"
-                                   class="regular-text" />
-                        </td>
-                    </tr>
-                    
-                    
-                    <tr>
-                        <th scope="row"><label for="zg_stripe_webhook_secret">Clave webhook</label></th>
-                        <td>
-                            <input type="password" name="zg_stripe_webhook_secret" id="zg_stripe_webhook_secret"
-                                   
-                                   value="<?=esc_attr ($values ['zg_stripe_webhook_secret']);?>"
-                                   
-                                   class="regular-text" />
-                        </td>
-                    </tr>
-                    
-                </table>
+                                           class="regular-text" />
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row"><label for="zg_stripe_secret">Clave secreta</label></th>
+                                <td>
+                                    <input type="password" name="zg_stripe_secret" id="zg_stripe_secret"
+                                           value="<?=esc_attr ($values ['secret']);?>"
+                                           class="regular-text" />
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row"><label for="zg_stripe_webhook_secret">Clave webhook</label></th>
+                                <td>
+                                    <input type="password" name="zg_stripe_webhook_secret" id="zg_stripe_webhook_secret"
+                                           value="<?=esc_attr ($values ['zg_stripe_webhook_secret']);?>"
+                                           class="regular-text" />
+                                </td>
+                            </tr>
+                        </table>
 
-                <?php
+                        <?php
 
 		submit_button ('Guardar cambios');
 		?>
-            </form>
+                    </form>
+                </div>
+                </div>
+
+                <div class="postbox">
+                <h2 class="hndle"><span>Estado del sistema</span></h2>
+                <div class="inside">
+                    <?php self::checkDependecncies (); ?>
+                </div>
+                </div>
+
+            </div>
         </div>
         <?php
 	}
@@ -91,9 +99,7 @@ class Stripe
 		$extensions = [ 'curl' => 'Requerido para llamadas HTTP a la API de Stripe', 'json' => 'Requerido para codificar/decodificar datos', 'mbstring' => 'Requerido para strings multibyte (UTF-8)', 'openssl' => 'Requerido para conexiones TLS seguras', 'gmp' => 'Opcional, ayuda con enteros grandes',
 				'bcmath' => 'Opcional, ayuda con enteros grandes'];
 
-		echo '<div class="wrap">';
-		echo '<h1>Chequeo de extensiones PHP para Stripe</h1>';
-		echo '<table class="widefat fixed striped" style="max-width:600px">';
+		echo '<table class="widefat fixed striped">';
 		echo '<thead><tr><th>Extensión</th><th>Estado</th><th>Comentario</th></tr></thead><tbody>';
 
 		foreach ($extensions as $ext => $desc)
@@ -109,7 +115,6 @@ class Stripe
 
 		echo '</tbody></table>';
 		echo '<p><em>Nota:</em> Stripe requiere <code>curl</code>, <code>json</code>, <code>mbstring</code> y <code>openssl</code>. <code>gmp</code> y <code>bcmath</code> son opcionales.</p>';
-		echo '</div>';
 	}
 
 

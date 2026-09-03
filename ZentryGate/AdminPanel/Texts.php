@@ -39,13 +39,20 @@ class Texts
 		?>
         <div class="wrap">
             <h1><?=esc_html__ ('Textos de Formularios', 'zentrygate');?></h1>
-            <form method="post" action="options.php">
-                <?php
+            <div class="zg-admin-column">
+                <div class="postbox">
+                <h2 class="hndle"><span><?=esc_html__ ('Página asociada a cada formulario', 'zentrygate');?></span></h2>
+                <div class="inside">
+                    <form method="post" action="options.php">
+                        <?php
 		settings_fields ('zg_form_texts_group');
 		do_settings_sections ('zentrygate_form_texts');
 		submit_button (__ ('Guardar cambios', 'zentrygate'));
 		?>
-            </form>
+                    </form>
+                </div>
+                </div>
+            </div>
         </div>
         <?php
 	}

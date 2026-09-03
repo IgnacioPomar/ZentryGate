@@ -14,7 +14,7 @@ ZentryGate is a WordPress plugin designed for managing multi-day, multi-section 
 
 1. Copy the plugin folder `zentrygate` into your `wp-content/plugins/` directory.
 2. Activate the plugin from the WordPress admin panel.
-3. A new page template will be available for login and event interaction.
+3. The active theme must provide the ZentryGate page template (e.g. `Template Name: Zentrygate Inscription Form`) and it must be assigned to a page via Page Attributes; the login/registration flow then continues on a separate, independently configured page.
 4. Admins can manage events and users via the WordPress admin menu.
 
 ## Tables Created

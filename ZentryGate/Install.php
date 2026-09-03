@@ -25,6 +25,22 @@ class Install
 
 
 	/**
+	 * Comprueba la versión de BBDD instalada y, si está desactualizada, relanza createSchema()
+	 * (dbDelta es aditivo/seguro: añade columnas/tablas nuevas sin tocar los datos existentes).
+	 */
+	public static function maybeUpgrade (): void
+	{
+		$installed = get_option ('zgDbVersion', '0');
+		if (version_compare ($installed, ZENTRYGATE_VERSION_DB, '<'))
+		{
+			self::createSchema ();
+			update_option ('zgDbVersion', ZENTRYGATE_VERSION_DB);
+			update_option ('zentrygate_db_version', ZENTRYGATE_VERSION_DB);
+		}
+	}
+
+
+	/**
 	 * DROP de tablas del plugin (ajusta la lista si tienes más).
 	 */
 	private static function dropTables (): void
@@ -94,6 +110,7 @@ class Install
 		formJson LONGTEXT NOT NULL,
         sectionsJson LONGTEXT NOT NULL,
         rulesJson LONGTEXT NOT NULL,
+        closed TINYINT(1) NOT NULL DEFAULT 0,
         PRIMARY KEY (id)
     ) $charsetCollate;";
 

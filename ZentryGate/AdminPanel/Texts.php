@@ -13,10 +13,11 @@ class Texts
 		register_setting ('zg_form_texts_group', 'zg_recovery_form_page');
 		register_setting ('zg_form_texts_group', 'zg_login_form_page');
 		register_setting ('zg_form_texts_group', 'zg_selection_form_page');
+		register_setting ('zg_form_texts_group', 'zg_no_active_events_page');
 
 		add_settings_section ('zg_form_texts_section', __ ('Seleccione la página con el texto de cada formulario', 'zentrygate'), '__return_false', 'zentrygate_form_texts');
 
-		$fields = [ 'zg_cookie_prompt_page' => __ ('Cookie Prompt', 'zentrygate'), 'zg_recovery_form_page' => __ ('Recovery Form', 'zentrygate'), 'zg_login_form_page' => __ ('Login Form', 'zentrygate'), 'zg_selection_form_page' => __ ('Opciones Form', 'zentrygate')];
+		$fields = [ 'zg_cookie_prompt_page' => __ ('Cookie Prompt', 'zentrygate'), 'zg_recovery_form_page' => __ ('Recovery Form', 'zentrygate'), 'zg_login_form_page' => __ ('Login Form', 'zentrygate'), 'zg_selection_form_page' => __ ('Opciones Form', 'zentrygate'), 'zg_no_active_events_page' => __ ('Sin eventos activos', 'zentrygate')];
 
 		foreach ($fields as $option => $label)
 		{

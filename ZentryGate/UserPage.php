@@ -120,7 +120,15 @@ class UserPage
 		// 3.1) Si no hay evento, mensaje único
 		if (! $this->event)
 		{
-			echo '<div class="zg-notice zg-notice-info"><p>No está abierta la inscripción a ningún evento</p></div>';
+			$noEventPageId = intval (get_option ('zg_no_active_events_page'));
+			if ($noEventPageId)
+			{
+				echo apply_filters ('the_content', get_post_field ('post_content', $noEventPageId));
+			}
+			else
+			{
+				echo '<div class="zg-notice zg-notice-info"><p>No está abierta la inscripción a ningún evento</p></div>';
+			}
 			return;
 		}
 
@@ -274,6 +282,7 @@ class UserPage
 		$row = $wpdb->get_row ("SELECT id, name, `date`
 			   FROM {$wpdb->prefix}zgEvents
 			  WHERE `date` >= CURDATE()
+			    AND closed = 0
 			  ORDER BY `date` ASC, id ASC
 			  LIMIT 1", ARRAY_A);
 

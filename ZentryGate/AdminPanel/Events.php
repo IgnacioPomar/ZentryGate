@@ -96,9 +96,23 @@ class Events
 			$name = isset ($_POST ['eventName']) ? sanitize_text_field (wp_unslash ($_POST ['eventName'])) : '';
 			$date = isset ($_POST ['eventDate']) ? sanitize_text_field (wp_unslash ($_POST ['eventDate'])) : '';
 
-			$wpdb->insert ($tables ['events'], [ 'name' => $name, 'date' => $date, 'sectionsJson' => '[]', 'rulesJson' => '[]'], [ '%s', '%s', '%s', '%s']);
+			if ($name === '' || $date === '')
+			{
+				echo '<div class="notice notice-error"><p>No se pudo crear el evento: datos incompletos.</p></div>';
+			}
+			else
+			{
+				$inserted = $wpdb->insert ($tables ['events'], [ 'name' => $name, 'date' => $date, 'formJson' => '[]', 'sectionsJson' => '[]', 'rulesJson' => '[]'], [ '%s', '%s', '%s', '%s', '%s']);
 
-			echo '<div class="notice notice-success"><p>Evento creado correctamente.</p></div>';
+				if ($inserted === false)
+				{
+					echo '<div class="notice notice-error"><p>' . esc_html ('No se pudo crear el evento: ' . $wpdb->last_error) . '</p></div>';
+				}
+				else
+				{
+					echo '<div class="notice notice-success"><p>Evento creado correctamente.</p></div>';
+				}
+			}
 			$handled = true;
 		}
 
@@ -131,12 +145,19 @@ class Events
 			}
 			else
 			{
-				$wpdb->insert ($tables ['events'], [ 'name' => $name, 'date' => $date, 'formJson' => $source->formJson, 'sectionsJson' => $source->sectionsJson, 'rulesJson' => $source->rulesJson, 'closed' => 0], [ '%s', '%s', '%s', '%s', '%s', '%d']);
+				$inserted = $wpdb->insert ($tables ['events'], [ 'name' => $name, 'date' => $date, 'formJson' => $source->formJson, 'sectionsJson' => $source->sectionsJson, 'rulesJson' => $source->rulesJson, 'closed' => 0], [ '%s', '%s', '%s', '%s', '%s', '%d']);
 
-				$newEventId = (int) $wpdb->insert_id;
-				$this->seedCapacityFromSections ($newEventId, $source->sectionsJson);
+				if ($inserted === false)
+				{
+					echo '<div class="notice notice-error"><p>' . esc_html ('No se pudo duplicar el evento: ' . $wpdb->last_error) . '</p></div>';
+				}
+				else
+				{
+					$newEventId = (int) $wpdb->insert_id;
+					$this->seedCapacityFromSections ($newEventId, $source->sectionsJson);
 
-				echo '<div class="notice notice-success"><p>Evento duplicado correctamente.</p></div>';
+					echo '<div class="notice notice-success"><p>Evento duplicado correctamente.</p></div>';
+				}
 			}
 			$handled = true;
 		}
@@ -183,12 +204,19 @@ class Events
 						$rulesJson = wp_json_encode ($data ['rulesJson'] ?? [ ]);
 						$closed = ! empty ($data ['closed']) ? 1 : 0;
 
-						$wpdb->insert ($tables ['events'], [ 'name' => $name, 'date' => $date, 'formJson' => $formJson, 'sectionsJson' => $sectionsJson, 'rulesJson' => $rulesJson, 'closed' => $closed], [ '%s', '%s', '%s', '%s', '%s', '%d']);
+						$inserted = $wpdb->insert ($tables ['events'], [ 'name' => $name, 'date' => $date, 'formJson' => $formJson, 'sectionsJson' => $sectionsJson, 'rulesJson' => $rulesJson, 'closed' => $closed], [ '%s', '%s', '%s', '%s', '%s', '%d']);
 
-						$newEventId = (int) $wpdb->insert_id;
-						$this->seedCapacityFromSections ($newEventId, $sectionsJson);
+						if ($inserted === false)
+						{
+							echo '<div class="notice notice-error"><p>' . esc_html ('No se pudo importar el evento: ' . $wpdb->last_error) . '</p></div>';
+						}
+						else
+						{
+							$newEventId = (int) $wpdb->insert_id;
+							$this->seedCapacityFromSections ($newEventId, $sectionsJson);
 
-						echo '<div class="notice notice-success"><p>Evento importado correctamente.</p></div>';
+							echo '<div class="notice notice-success"><p>Evento importado correctamente.</p></div>';
+						}
 					}
 				}
 			}

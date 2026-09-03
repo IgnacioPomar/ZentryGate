@@ -5,11 +5,17 @@ namespace ZentryGate;
 class Install
 {
 
+	/** Opción donde se guarda la versión de esquema instalada. */
+	private const DB_VERSION_OPTION = 'zgDbVersion';
+
+	/** Nombre antiguo de la misma opción; se mantiene sincronizado por compatibilidad. */
+	private const LEGACY_DB_VERSION_OPTION = 'zentrygate_db_version';
+
 
 	public static function activate (): void
 	{
 		self::createSchema ();
-		update_option ('zentrygate_db_version', ZENTRYGATE_VERSION_DB);
+		self::storeDbVersion ();
 	}
 
 
@@ -20,7 +26,7 @@ class Install
 	{
 		self::dropTables ();
 		self::createSchema ();
-		update_option ('zentrygate_db_version', ZENTRYGATE_VERSION_DB);
+		self::storeDbVersion ();
 	}
 
 
@@ -30,13 +36,28 @@ class Install
 	 */
 	public static function maybeUpgrade (): void
 	{
-		$installed = get_option ('zgDbVersion', '0');
-		if (version_compare ($installed, ZENTRYGATE_VERSION_DB, '<'))
+		$installed = get_option (self::DB_VERSION_OPTION, null);
+		if ($installed === null)
+		{
+			// Instalaciones antiguas que sólo guardaron el nombre de opción anterior.
+			$installed = get_option (self::LEGACY_DB_VERSION_OPTION, '0');
+		}
+
+		if (version_compare ((string) $installed, ZENTRYGATE_VERSION_DB, '<'))
 		{
 			self::createSchema ();
-			update_option ('zgDbVersion', ZENTRYGATE_VERSION_DB);
-			update_option ('zentrygate_db_version', ZENTRYGATE_VERSION_DB);
+			self::storeDbVersion ();
 		}
+	}
+
+
+	/**
+	 * Guarda la versión de esquema instalada (en la opción actual y en la antigua).
+	 */
+	private static function storeDbVersion (): void
+	{
+		update_option (self::DB_VERSION_OPTION, ZENTRYGATE_VERSION_DB);
+		update_option (self::LEGACY_DB_VERSION_OPTION, ZENTRYGATE_VERSION_DB);
 	}
 
 
@@ -49,7 +70,7 @@ class Install
 		$prefix = $wpdb->prefix;
 
 		// Orden: primero las que referencian (reservas) y después maestros.
-		$tables = [ "{$prefix}zgReservations", "{$prefix}zgCapacity", "{$prefix}zgUsers", "{$prefix}zgEvents"];
+		$tables = [ "{$prefix}zgReservations", "{$prefix}zgCapacity", "{$prefix}zgUsers", "{$prefix}zgEvents", "{$prefix}zgStripeEvents"];
 
 		foreach ($tables as $table)
 		{
@@ -67,11 +88,7 @@ class Install
 		$charsetCollate = $wpdb->get_charset_collate ();
 		$prefix = $wpdb->prefix;
 
-		// -------------------------------
-		// Temporal: borrar tablas que no encajan en el nuevo esquema y han de ser recreadas
-		$wpdb->query ("DROP TABLE IF EXISTS {$prefix}zgReservations;");
-		// -------------------------------
-
+		// Sólo dbDelta: aditivo y no destructivo. Para recrear desde cero usa recreateDatabase().
 		require_once (ABSPATH . 'wp-admin/includes/upgrade.php');
 
 		$sqlUsers = "CREATE TABLE {$prefix}zgUsers (
@@ -87,7 +104,7 @@ class Install
     	lastLogin DATETIME NULL DEFAULT NULL,
     	resetToken CHAR(64) NULL DEFAULT NULL,
     	resetRequestedAt DATETIME NULL DEFAULT NULL,
-        nonceHash CHAR(64) NOT NULL,
+        nonceHash CHAR(64) NOT NULL DEFAULT '',
     	verifyToken CHAR(64) NULL DEFAULT NULL,
     	unsubscribeToken CHAR(64) NULL DEFAULT NULL,
     	failedLoginCount INT UNSIGNED NOT NULL DEFAULT 0,
@@ -184,8 +201,6 @@ class Install
 		dbDelta ($sqlReservations);
 		dbDelta ($sqlCapacity);
 		dbDelta ($sqlStripeEvents);
-
-		add_option ('zgDbVersion', ZENTRYGATE_VERSION_DB);
 	}
 }
 

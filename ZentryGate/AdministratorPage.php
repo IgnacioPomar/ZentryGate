@@ -178,8 +178,8 @@ class AdministratorPage
 				continue; // Saltar a la siguiente línea si ya existe
 			}
 
-			$hash = wp_hash_password ($pass);
-			$result = $wpdb->insert ($table, [ 'email' => $email, 'name' => $name, 'passwordHash' => $hash, 'isAdmin' => 0, 'isEnabled' => 1, 'invitationCount' => 0, 'lastLogin' => null], [ '%s', '%s', '%s', '%d', '%d', '%d', '%s']);
+			$hash = password_hash ($pass, PASSWORD_DEFAULT);
+			$result = $wpdb->insert ($table, [ 'email' => $email, 'name' => $name, 'passwordHash' => $hash, 'status' => 'active', 'isAdmin' => 0, 'isEnabled' => 1, 'otherData' => '{}', 'lastLogin' => null], [ '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s']);
 			if ($result === false)
 			{
 				echo '<div class="notice notice-error"><p>' . esc_html ("Error al insertar {$email}: {$wpdb->last_error}") . '</p></div>';
@@ -291,8 +291,8 @@ class AdministratorPage
 		}
 
 		// Hash the password and insert (always enabled, never admin)
-		$hash = wp_hash_password ($password);
-		$result = $wpdb->insert ($table, [ 'email' => $email, 'name' => $name, 'passwordHash' => $hash, 'isAdmin' => 0, 'isEnabled' => 1, 'invitationCount' => 0, 'lastLogin' => null], [ '%s', '%s', '%s', '%d', '%d', '%d', '%s']);
+		$hash = password_hash ($password, PASSWORD_DEFAULT);
+		$result = $wpdb->insert ($table, [ 'email' => $email, 'name' => $name, 'passwordHash' => $hash, 'status' => 'active', 'isAdmin' => 0, 'isEnabled' => 1, 'otherData' => '{}', 'lastLogin' => null], [ '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s']);
 
 		if ($result === false)
 		{
@@ -347,7 +347,7 @@ class AdministratorPage
 		{
 			$email = sanitize_email (wp_unslash ($_POST ['zg_update_email']));
 			$password = sanitize_text_field (wp_unslash ($_POST ['zg_new_password']));
-			$hash = wp_hash_password ($password);
+			$hash = password_hash ($password, PASSWORD_DEFAULT);
 			$wpdb->update ($table, [ 'passwordHash' => $hash], [ 'email' => $email], [ '%s'], [ '%s']);
 			echo '<div class="notice notice-success"><p>' . esc_html__ ('Contraseña actualizada.', 'zentrygate') . '</p></div>';
 		}

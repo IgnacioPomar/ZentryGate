@@ -153,10 +153,18 @@ function zg_handle_detail_event_addsection ()
 
 		$sectionId = (string) abs (crc32 (uniqid ()));
 		$sections [] = [ 'id' => $sectionId, 'label' => $label, 'capacity' => $capacity, 'price' => $price, 'isHidden' => $isHidden];
-		$wpdb->update ($eventsTable, [ 'sectionsJson' => wp_json_encode ($sections)], [ 'id' => $eventId], [ '%s'], [ '%d']);
-		$wpdb->insert ($capTable, [ 'eventId' => $eventId, 'sectionId' => $sectionId, 'maxCapacity' => $capacity], [ '%d', '%s', '%d']);
-		echo '<div class="notice notice-success"><p>Sección creada correctamente.</p></div>';
-		$handled = true;
+		$updated = $wpdb->update ($eventsTable, [ 'sectionsJson' => wp_json_encode ($sections)], [ 'id' => $eventId], [ '%s'], [ '%d']);
+		$inserted = $wpdb->insert ($capTable, [ 'eventId' => $eventId, 'sectionId' => $sectionId, 'maxCapacity' => $capacity, 'usedCapacity' => 0], [ '%d', '%s', '%d', '%d']);
+
+		if (false === $updated || false === $inserted)
+		{
+			echo '<div class="notice notice-error"><p>' . esc_html ('Error al crear la sección: ' . $wpdb->last_error) . '</p></div>';
+		}
+		else
+		{
+			echo '<div class="notice notice-success"><p>Sección creada correctamente.</p></div>';
+			$handled = true;
+		}
 	}
 
 	return $handled;
@@ -197,10 +205,28 @@ function zg_handle_detail_event_editsection ()
 			}
 		}
 		unset ($sec);
-		$wpdb->update ($eventsTable, [ 'sectionsJson' => wp_json_encode ($sections)], [ 'id' => $eventId], [ '%s'], [ '%d']);
-		$wpdb->update ($capTable, [ 'maxCapacity' => $capacity], [ 'eventId' => $eventId, 'sectionId' => $sectionId], [ '%d'], [ '%d', '%s']);
-		echo '<div class="notice notice-success"><p>Sección actualizada correctamente.</p></div>';
-		$handled = true;
+		$updated = $wpdb->update ($eventsTable, [ 'sectionsJson' => wp_json_encode ($sections)], [ 'id' => $eventId], [ '%s'], [ '%d']);
+		$capUpdated = $wpdb->update ($capTable, [ 'maxCapacity' => $capacity], [ 'eventId' => $eventId, 'sectionId' => $sectionId], [ '%d'], [ '%d', '%s']);
+
+		if (0 === $capUpdated)
+		{
+			// La fila de aforo puede no existir (secciones creadas antes de corregir el alta): la creamos.
+			$exists = (int) $wpdb->get_var ($wpdb->prepare ("SELECT COUNT(*) FROM {$capTable} WHERE eventId = %d AND sectionId = %s", $eventId, $sectionId));
+			if (! $exists)
+			{
+				$capUpdated = $wpdb->insert ($capTable, [ 'eventId' => $eventId, 'sectionId' => $sectionId, 'maxCapacity' => $capacity, 'usedCapacity' => 0], [ '%d', '%s', '%d', '%d']);
+			}
+		}
+
+		if (false === $updated || false === $capUpdated)
+		{
+			echo '<div class="notice notice-error"><p>' . esc_html ('Error al actualizar la sección: ' . $wpdb->last_error) . '</p></div>';
+		}
+		else
+		{
+			echo '<div class="notice notice-success"><p>Sección actualizada correctamente.</p></div>';
+			$handled = true;
+		}
 	}
 
 	return $handled;

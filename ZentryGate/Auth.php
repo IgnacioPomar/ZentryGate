@@ -12,6 +12,7 @@ namespace ZentryGate;
 class Auth
 {
 	private const COOKIE_NAME = 'ZentryGate_v2';
+	private const SESSION_TTL = 30 * DAY_IN_SECONDS;
 	private const LOGON_ON_VALIDATE = TRUE;
 	public static bool $isEmailVerified = false;
 	protected static array $lastErrors = [ ];
@@ -77,8 +78,7 @@ class Auth
 				$userId = (int) (self::$userData ['userId'] ?? 0);
 				if ($userId > 0)
 				{
-					$nonce = bin2hex (random_bytes (16));
-					self::saveCookieValue ($nonce . '@' . $userId);
+					self::saveCookieValue (self::buildSessionCookie ($userId));
 				}
 				else
 				{
@@ -93,7 +93,7 @@ class Auth
 			return;
 		}
 
-		// 3) Con cookie presente, intenta cargar usuario si es "algo@id"
+		// 3) Con cookie presente, intenta cargar usuario si el token de sesión es válido
 		$cookie = (string) self::$cookieRaw;
 
 		if ($cookie === '@')
@@ -101,16 +101,80 @@ class Auth
 			return; // aceptadas sin login
 		}
 
-		$parts = explode ('@', $cookie, 2);
-		if (count ($parts) === 2)
+		$session = self::verifySessionCookie ($cookie);
+		if ($session === null)
 		{
-			$idPart = $parts [1];
-			$userId = ctype_digit ($idPart) ? (int) $idPart : 0;
-			if ($userId > 0)
-			{
-				self::loadUserById ($userId); // rellena self::$userData si existe y está habilitado
-			}
+			return; // token ausente, corrupto, con firma inválida o caducado
 		}
+
+		self::loadUserById ($session ['userId']); // rellena self::$userData si existe y está habilitado
+
+		// Renovación deslizante: si queda menos de la mitad del TTL, reemitir el token
+		if (self::$userData !== null && $session ['expires'] - time () < self::SESSION_TTL / 2)
+		{
+			self::saveCookieValue (self::buildSessionCookie ($session ['userId']));
+		}
+	}
+
+
+	/**
+	 * Clave usada para firmar el token de sesión. Deriva de las claves de
+	 * WordPress (wp_salt), con un prefijo propio para separar el uso de esta
+	 * clave del resto de cookies/nonces que WordPress firma con la misma sal.
+	 */
+	private static function getCookieSecret (): string
+	{
+		return wp_salt ('auth') . '|zentrygate_session_v1';
+	}
+
+
+	/**
+	 * Construye un token de sesión firmado: "{userId}|{expira}|{hmac}".
+	 * El hmac impide falsificar el userId o alargar la expiración sin conocer
+	 * la clave del servidor.
+	 */
+	private static function buildSessionCookie (int $userId, int $ttl = self::SESSION_TTL): string
+	{
+		$expires = time () + $ttl;
+		$payload = $userId . '|' . $expires;
+		$hmac = hash_hmac ('sha256', $payload, self::getCookieSecret ());
+		return $payload . '|' . $hmac;
+	}
+
+
+	/**
+	 * Verifica un token de sesión firmado. Devuelve ['userId'=>int,'expires'=>int]
+	 * si la firma es válida y no ha caducado, o null en cualquier otro caso.
+	 */
+	private static function verifySessionCookie (string $cookie): ?array
+	{
+		$parts = explode ('|', $cookie, 3);
+		if (count ($parts) !== 3)
+		{
+			return null;
+		}
+
+		[ $idPart, $expiresPart, $hmac] = $parts;
+		if (! ctype_digit ($idPart) || ! ctype_digit ($expiresPart))
+		{
+			return null;
+		}
+
+		$userId = (int) $idPart;
+		$expires = (int) $expiresPart;
+		if ($userId <= 0 || $expires <= time ())
+		{
+			return null;
+		}
+
+		$payload = $idPart . '|' . $expiresPart;
+		$expectedHmac = hash_hmac ('sha256', $payload, self::getCookieSecret ());
+		if (! hash_equals ($expectedHmac, $hmac))
+		{
+			return null;
+		}
+
+		return [ 'userId' => $userId, 'expires' => $expires];
 	}
 
 
@@ -483,6 +547,11 @@ endforeach
 	private static function checkLoginForm (): bool
 	{
 		if ($_SERVER ['REQUEST_METHOD'] !== 'POST' || ! isset ($_POST ['zg_email'], $_POST ['zg_password']))
+		{
+			return false;
+		}
+
+		if (! isset ($_POST ['zg_login_nonce']) || ! wp_verify_nonce (wp_unslash ($_POST ['zg_login_nonce']), 'zg_login_action'))
 		{
 			return false;
 		}
@@ -1245,6 +1314,13 @@ echo 'Hall Name'; // honeypot ?>
 	public static function handleRegisterPost (): bool
 	{
 		self::$lastErrors = [ ];
+
+		// 1.0) CSRF
+		if (! isset ($_POST ['zg_register_nonce']) || ! wp_verify_nonce (wp_unslash ($_POST ['zg_register_nonce']), 'zg_register_action'))
+		{
+			self::$lastErrors [] = __ ('Error en el formulario. Por favor, recarga la página e inténtalo de nuevo.', 'zentrygate');
+			return false;
+		}
 
 		// 1.1) Honeypot
 		if (isset ($_POST ['zg_hp_name']) && trim ((string) $_POST ['zg_hp_name']) !== '')

@@ -179,6 +179,19 @@ class Auth
 
 
 	/**
+	 * Decodifica un email codificado en base64 URL-safe (usado en enlaces de email).
+	 */
+	private static function decodeUrlSafeEmail (string $b64): ?string
+	{
+		$b64 = strtr ($b64, '-_', '+/');
+		$pad = strlen ($b64) % 4;
+		if ($pad) $b64 .= str_repeat ('=', 4 - $pad);
+		$email = base64_decode ($b64, true);
+		return $email !== false ? $email : null;
+	}
+
+
+	/**
 	 * Verificación de email (sin cambios de fondo).
 	 */
 	public static function handleEmailVerification (): bool
@@ -189,10 +202,11 @@ class Auth
 		}
 
 		$eParam = isset ($_GET ['e']) ? (string) wp_unslash ($_GET ['e']) : '';
-		$b64 = strtr ($eParam, '-_', '+/');
-		$pad = strlen ($b64) % 4;
-		if ($pad) $b64 .= str_repeat ('=', 4 - $pad);
-		$email = base64_decode ($b64, true);
+		$email = self::decodeUrlSafeEmail ($eParam);
+		if ($email === null)
+		{
+			return false;
+		}
 
 		$token = sanitize_text_field (wp_unslash ($_GET ['token']));
 
@@ -577,24 +591,44 @@ endforeach
 
 	private static function processRecoveryChangePassword (): bool
 	{
-		if ($_SERVER ['REQUEST_METHOD'] !== 'POST' || ! isset ($_POST ['zg_recover_email'], $_POST ['zg_new_password'], $_POST ['zg_recovery_token']))
+		self::$lastErrors = [ ];
+
+		if ($_SERVER ['REQUEST_METHOD'] !== 'POST' || ! isset ($_POST ['zg_recover_email'], $_POST ['zg_new_password'], $_POST ['zg_confirm_password'], $_POST ['token']))
 		{
+			self::$lastErrors [] = __ ('Error en el formulario. Por favor, solicita un nuevo enlace.', 'zentrygate');
 			return false;
 		}
 
-		$email = sanitize_email ($_POST ['zg_recover_email']);
-		$newPassword = $_POST ['zg_new_password'];
-		$token = sanitize_text_field ($_POST ['zg_recovery_token']);
+		if (! isset ($_POST ['zg_pass_reset_nonce']) || ! wp_verify_nonce (wp_unslash ($_POST ['zg_pass_reset_nonce']), 'zg_pass_reset_action'))
+		{
+			self::$lastErrors [] = __ ('Error en el formulario. Por favor, recarga la página e inténtalo de nuevo.', 'zentrygate');
+			return false;
+		}
+
+		$email = self::decodeUrlSafeEmail ((string) wp_unslash ($_POST ['zg_recover_email']));
+		$token = sanitize_text_field (wp_unslash ($_POST ['token']));
+		$newPassword = (string) $_POST ['zg_new_password'];
+		$confirmPassword = (string) $_POST ['zg_confirm_password'];
+
+		if ($email === null || self::findUserForPasswordReset ($email, $token) === null)
+		{
+			self::$lastErrors [] = __ ('El enlace de cambio de contraseña no es válido o ha expirado.', 'zentrygate');
+			return false;
+		}
+
+		if ($newPassword === '' || $confirmPassword === '')
+		{
+			self::$lastErrors [] = __ ('Debes introducir y confirmar la contraseña.', 'zentrygate');
+			return false;
+		}
+
+		if ($newPassword !== $confirmPassword)
+		{
+			self::$lastErrors [] = __ ('Las contraseñas no coinciden.', 'zentrygate');
+			return false;
+		}
 
 		global $wpdb;
-		$user = $wpdb->get_row ($wpdb->prepare ("SELECT * FROM {$wpdb->prefix}zgUsers WHERE email = %s", $email), ARRAY_A);
-
-		if (! $user || ! self::isStillValidToken ($user ['resetRequestedAt'], self::RESET_TOKEN_MAX_MINUTES * MINUTE_IN_SECONDS) || $user ['resetToken'] !== $token)
-		{
-			return false;
-		}
-
-		// Update password and clear reset token
 		$hashedPassword = password_hash ($newPassword, PASSWORD_DEFAULT);
 		$updated = $wpdb->update ("{$wpdb->prefix}zgUsers", [ 'passwordHash' => $hashedPassword, 'resetToken' => null, 'resetRequestedAt' => null], [ 'email' => $email], [ '%s', '%s', '%s'], [ '%s']);
 
@@ -604,18 +638,26 @@ endforeach
 
 	/**
 	 * Renderiza el formulario para establecer una nueva contraseña,
-	 * usando los parámetros GET 'zg_recover_email' y 'token'.
+	 * usando los parámetros GET 'zg_recover_email' (base64 URL-safe) y 'token'.
 	 */
-	public static function renderRecoveryCangepasswordForm (): void
+	public static function renderPasswordResetForm (): void
 	{
-		// Obtener y sanear parámetros
-		$email = isset ($_GET ['zg_recover_email']) ? sanitize_email (wp_unslash ($_GET ['zg_recover_email'])) : '';
+		$email = isset ($_GET ['zg_recover_email']) ? (string) wp_unslash ($_GET ['zg_recover_email']) : '';
 		$token = isset ($_GET ['token']) ? sanitize_text_field (wp_unslash ($_GET ['token'])) : '';
+		$redirectTo = esc_url (add_query_arg ([ 'zg_action' => 'pass-reset'], get_permalink ()));
+		$actionUrl = esc_url (admin_url ('admin-post.php'));
 
+		$errors = self::flashTake ('zg_err_', $_GET ['errkey'] ?? '');
+		if (! empty ($errors))
+		{
+			self::renderErrors ($errors);
+		}
 		?>
-        <form method="post" class="zg-recovery-change-password-form" aria-labelledby="zg-change-title" action="<?=PLugin::$permalink?>">
+        <form method="post" class="zg-recovery-change-password-form" aria-labelledby="zg-change-title" action="<?=$actionUrl?>">
+            <input type="hidden" name="action" value="zg_password_reset">
+            <input type="hidden" name="redirect_to" value="<?=$redirectTo;?>">
             <?php
-		// Mantener acción y datos en POST
+		// Mantener email (b64) y token en POST
 		printf ('<input type="hidden" name="zg_recover_email" value="%s">', esc_attr ($email));
 		printf ('<input type="hidden" name="token" value="%s">', esc_attr ($token));
 		// Nonce para seguridad
@@ -715,36 +757,12 @@ esc_html_e ('Cambiar contraseña', 'zentrygate');
 
 	/**
 	 * Render the password recovery form to ask for the email.
+	 * (handleRecoveryGet ya procesa el caso en que venga 'zg_recover_email' en el GET,
+	 * así que aquí solo queda pintar el formulario para pedirlo.)
 	 */
 	public static function renderRecoveryForm (): void
 	{
-		if (isset ($_GET ['zg_recover_email']))
-		{
-			$email = sanitize_email ($_GET ['zg_recover_email']);
-			if (! is_email ($email))
-			{
-				echo '<p class="error">' . esc_html__ ('El correo electrónico proporcionado no es válido.', 'zentrygate') . '</p>';
-				return;
-			}
-
-			if (self::processRecoveryChangePassword ())
-			{
-				echo '<p class="success">' . esc_html__ ('Se ha Cambiado correctamente la contraseña.', 'zentrygate') . '</p>';
-				self::renderLoginForm ();
-				return;
-			}
-
-			if (self::sendPasswordResetToken ($email))
-			{
-				echo '<p class="success">' . esc_html__ ('Se ha enviado un enlace de recuperación a tu correo electrónico.', 'zentrygate') . '</p>';
-			}
-
-			self::renderRecoveryCangepasswordForm ();
-		}
-		else
-		{
-			self::renderRecoveryAskEmailForm ();
-		}
+		self::renderRecoveryAskEmailForm ();
 	}
 
 
@@ -822,16 +840,11 @@ esc_html_e ('Enviar enlace', 'zentrygate');
 	}
 
 
-	public static function isValidResetToken (): bool
+	/**
+	 * Busca el usuario habilitado cuyo token de reseteo de contraseña coincide y sigue vigente.
+	 */
+	private static function findUserForPasswordReset (string $email, string $token): ?array
 	{
-		if (! isset ($_GET ['zg_recover_email'], $_GET ['token']))
-		{
-			return false;
-		}
-
-		$email = sanitize_email (wp_unslash ($_GET ['zg_recover_email']));
-		$token = sanitize_text_field (wp_unslash ($_GET ['token']));
-
 		global $wpdb;
 		$user = $wpdb->get_row ($wpdb->prepare ("SELECT email, isEnabled, resetToken, resetRequestedAt
                FROM {$wpdb->prefix}zgUsers
@@ -839,10 +852,24 @@ esc_html_e ('Enviar enlace', 'zentrygate');
 
 		if (! $user || ! (bool) $user ['isEnabled'] || ! self::isStillValidToken ($user ['resetRequestedAt'], self::RESET_TOKEN_MAX_MINUTES * MINUTE_IN_SECONDS) || $user ['resetToken'] !== $token)
 		{
+			return null;
+		}
+
+		return $user;
+	}
+
+
+	public static function isValidResetToken (): bool
+	{
+		if (! isset ($_GET ['zg_recover_email'], $_GET ['token']))
+		{
 			return false;
 		}
 
-		return true;
+		$email = self::decodeUrlSafeEmail ((string) wp_unslash ($_GET ['zg_recover_email']));
+		$token = sanitize_text_field (wp_unslash ($_GET ['token']));
+
+		return $email !== null && self::findUserForPasswordReset ($email, $token) !== null;
 	}
 
 
@@ -1302,6 +1329,37 @@ echo 'Hall Name'; // honeypot ?>
 			$errkey = self::flashSet ('zg_err_', self::$lastErrors);
 			$oldkey = self::flashSet ('zg_old_', self::captureRegisterOldInput ());
 			$url = add_query_arg ([ 'zg_action' => 'register', 'zg_notice' => 'errors', 'errkey' => $errkey, 'oldkey' => $oldkey], $redirect);
+		}
+		wp_safe_redirect ($url);
+		exit ();
+	}
+
+
+	public static function handlePasswordResetPostEntryPoint (): void
+	{
+		$redirect = isset ($_POST ['redirect_to']) ? esc_url_raw (wp_unslash ($_POST ['redirect_to'])) : home_url ('/');
+		$emailParam = isset ($_POST ['zg_recover_email']) ? (string) wp_unslash ($_POST ['zg_recover_email']) : '';
+		$tokenParam = isset ($_POST ['token']) ? sanitize_text_field (wp_unslash ($_POST ['token'])) : '';
+
+		if (self::processRecoveryChangePassword ())
+		{
+			$url = add_query_arg ([ 'zg_action' => 'pass-reset', 'zg_notice' => 'success'], $redirect);
+		}
+		else
+		{
+			$errkey = self::flashSet ('zg_err_', self::$lastErrors);
+			$args = [ 'zg_action' => 'pass-reset', 'zg_notice' => 'errors', 'errkey' => $errkey];
+
+			// Si el token sigue siendo válido (p.ej. el error fue que las contraseñas no
+			// coincidían), mantenemos email y token para reintentar sin pedir otro enlace.
+			$email = self::decodeUrlSafeEmail ($emailParam);
+			if ($email !== null && self::findUserForPasswordReset ($email, $tokenParam) !== null)
+			{
+				$args ['zg_recover_email'] = $emailParam;
+				$args ['token'] = $tokenParam;
+			}
+
+			$url = add_query_arg ($args, $redirect);
 		}
 		wp_safe_redirect ($url);
 		exit ();

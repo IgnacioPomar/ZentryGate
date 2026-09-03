@@ -31,6 +31,9 @@ class Plugin
 		add_action ('admin_post_nopriv_zg_register', [ \ZentryGate\Auth::class, 'handleRegisterPostEntryPoint']); // no logados
 		add_action ('admin_post_zg_register', [ \ZentryGate\Auth::class, 'handleRegisterPostEntryPoint']); // logados
 
+		add_action ('admin_post_nopriv_zg_password_reset', [ \ZentryGate\Auth::class, 'handlePasswordResetPostEntryPoint']); // no logados
+		add_action ('admin_post_zg_password_reset', [ \ZentryGate\Auth::class, 'handlePasswordResetPostEntryPoint']); // logados
+
 		// add plugin style
 		add_action ('wp_enqueue_scripts', [ self::class, 'enqueueStyles']);
 		add_action ('admin_enqueue_scripts', [ self::class, 'enqueueStyles']);

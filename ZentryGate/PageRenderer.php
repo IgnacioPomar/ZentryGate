@@ -129,10 +129,18 @@ class PageRenderer
 				case 'pass-reset':
 					if ($notice === 'errors')
 					{
-						// El usuario ha tratado de cambiar las password pero ha dado problemas
-						// En este caso... ¿como podría ocurrir? ¿contraseñas distintas o que no cumplan con la política?
-
-						Auth::renderRecoveryAskEmailForm ();
+						// El usuario ha tratado de cambiar la password pero ha dado problemas
+						// (contraseñas distintas, token caducado durante el envío, etc.)
+						if (Auth::isValidResetToken ())
+						{
+							// El token sigue siendo válido: reintenta con el mismo enlace
+							Auth::renderPasswordResetForm ();
+						}
+						else
+						{
+							// El token ya no es válido: hay que pedir uno nuevo
+							Auth::renderRecoveryAskEmailForm ();
+						}
 					}
 					else if ($notice === 'success')
 					{

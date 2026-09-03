@@ -1493,12 +1493,13 @@ echo 'Hall Name'; // honeypot ?>
 		$passwordHash = password_hash ($password, PASSWORD_DEFAULT);
 		$verifyToken = bin2hex (random_bytes (32));
 		$unsubscribeToken = bin2hex (random_bytes (32));
+		$nonceHash = bin2hex (random_bytes (32));
 		$status = 'active';
 		$isEnabled = 1; // habilitado (según tu configuración actual)
 		$otherJson = wp_json_encode ($otherClean, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-		$data = [ 'email' => $email, 'name' => $name, 'passwordHash' => $passwordHash, 'status' => $status, 'isAdmin' => 0, 'isEnabled' => $isEnabled, 'otherData' => $otherJson, 'verifyToken' => $verifyToken, 'unsubscribeToken' => $unsubscribeToken, 'failedLoginCount' => 0];
-		$format = [ '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%d'];
+		$data = [ 'email' => $email, 'name' => $name, 'passwordHash' => $passwordHash, 'status' => $status, 'isAdmin' => 0, 'isEnabled' => $isEnabled, 'otherData' => $otherJson, 'nonceHash' => $nonceHash, 'verifyToken' => $verifyToken, 'unsubscribeToken' => $unsubscribeToken, 'failedLoginCount' => 0];
+		$format = [ '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%s', '%d'];
 
 		$ok = $wpdb->insert ($table, $data, $format);
 		if (! $ok)

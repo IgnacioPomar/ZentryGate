@@ -64,7 +64,7 @@ class Users
 				$now = current_time ('mysql');
 
 				// Datos mínimos
-				$data = [ 'email' => $email, 'name' => $name, 'isAdmin' => 1, 'isEnabled' => 1, 'passwordHash' => $hash, 'status' => 'active', 'otherData' => '{}', 'createdAt' => $now];
+				$data = [ 'email' => $email, 'name' => $name, 'isAdmin' => 1, 'isEnabled' => 1, 'passwordHash' => $hash, 'status' => 'active', 'otherData' => '{}', 'nonceHash' => bin2hex (random_bytes (32)), 'createdAt' => $now];
 
 				$ok = $wpdb->insert ($table, $data);
 

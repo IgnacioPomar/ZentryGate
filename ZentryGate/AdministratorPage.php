@@ -179,7 +179,7 @@ class AdministratorPage
 			}
 
 			$hash = password_hash ($pass, PASSWORD_DEFAULT);
-			$result = $wpdb->insert ($table, [ 'email' => $email, 'name' => $name, 'passwordHash' => $hash, 'status' => 'active', 'isAdmin' => 0, 'isEnabled' => 1, 'otherData' => '{}', 'lastLogin' => null], [ '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s']);
+			$result = $wpdb->insert ($table, [ 'email' => $email, 'name' => $name, 'passwordHash' => $hash, 'status' => 'active', 'isAdmin' => 0, 'isEnabled' => 1, 'otherData' => '{}', 'nonceHash' => bin2hex (random_bytes (32)), 'lastLogin' => null], [ '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s']);
 			if ($result === false)
 			{
 				echo '<div class="notice notice-error"><p>' . esc_html ("Error al insertar {$email}: {$wpdb->last_error}") . '</p></div>';
@@ -292,7 +292,7 @@ class AdministratorPage
 
 		// Hash the password and insert (always enabled, never admin)
 		$hash = password_hash ($password, PASSWORD_DEFAULT);
-		$result = $wpdb->insert ($table, [ 'email' => $email, 'name' => $name, 'passwordHash' => $hash, 'status' => 'active', 'isAdmin' => 0, 'isEnabled' => 1, 'otherData' => '{}', 'lastLogin' => null], [ '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s']);
+		$result = $wpdb->insert ($table, [ 'email' => $email, 'name' => $name, 'passwordHash' => $hash, 'status' => 'active', 'isAdmin' => 0, 'isEnabled' => 1, 'otherData' => '{}', 'nonceHash' => bin2hex (random_bytes (32)), 'lastLogin' => null], [ '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s']);
 
 		if ($result === false)
 		{

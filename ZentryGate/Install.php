@@ -201,6 +201,28 @@ class Install
 		dbDelta ($sqlReservations);
 		dbDelta ($sqlCapacity);
 		dbDelta ($sqlStripeEvents);
+
+		self::migrateColumnDefaults ();
+	}
+
+
+	/**
+	 * Correcciones de esquema que dbDelta no es capaz de aplicar por sí mismo.
+	 *
+	 * dbDelta compara el DEFAULT declarado con el de la tabla usando `!=`, y en PHP
+	 * `null != ''` es false: por eso nunca detecta que hay que añadir DEFAULT '' a una
+	 * columna que no tenía ninguno. Lo forzamos aquí de forma idempotente.
+	 */
+	private static function migrateColumnDefaults (): void
+	{
+		global $wpdb;
+		$usersTable = $wpdb->prefix . 'zgUsers';
+
+		$column = $wpdb->get_row ("SHOW COLUMNS FROM `{$usersTable}` LIKE 'nonceHash'");
+		if ($column && $column->Default === null)
+		{
+			$wpdb->query ("ALTER TABLE `{$usersTable}` MODIFY nonceHash CHAR(64) NOT NULL DEFAULT ''");
+		}
 	}
 }
 

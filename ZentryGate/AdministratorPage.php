@@ -75,6 +75,17 @@ class AdministratorPage
 		$name = isset ($this->sessionData ['name']) ? sanitize_text_field ($this->sessionData ['name']) : '';
 		printf ('<h2>%s, %s</h2>', esc_html__ ('Bienvenido', 'zentrygate'), esc_html ($name));
 		echo '<p>' . esc_html__ ('Desde aquí puedes gestionar las diferentes opciones de administración.', 'zentrygate') . '</p>';
+
+		global $wpdb;
+		$totalUsers = (int) $wpdb->get_var ("SELECT COUNT(*) FROM {$wpdb->prefix}zgUsers WHERE isAdmin = 0");
+		$withReservation = (int) $wpdb->get_var ("SELECT COUNT(DISTINCT userId) FROM {$wpdb->prefix}zgReservations WHERE status NOT IN ('cancelled','expired')");
+		$pendingPayment = (int) $wpdb->get_var ("SELECT COUNT(DISTINCT userId) FROM {$wpdb->prefix}zgReservations WHERE status = 'pending_payment'");
+
+		echo '<div class="zg-stat-tiles">';
+		echo '<div class="zg-stat-tile"><div class="zg-stat-tile-label">' . esc_html__ ('Usuarios', 'zentrygate') . '</div><div class="zg-stat-tile-value">' . esc_html ((string) $totalUsers) . '</div></div>';
+		echo '<div class="zg-stat-tile"><div class="zg-stat-tile-label">' . esc_html__ ('Con reserva', 'zentrygate') . '</div><div class="zg-stat-tile-value">' . esc_html ((string) $withReservation) . '</div></div>';
+		echo '<div class="zg-stat-tile"><div class="zg-stat-tile-label">' . esc_html__ ('Pendiente de pago', 'zentrygate') . '</div><div class="zg-stat-tile-value">' . esc_html ((string) $pendingPayment) . '</div></div>';
+		echo '</div>';
 	}
 
 
@@ -89,8 +100,23 @@ class AdministratorPage
             <h2><?=esc_html__ ('Importar usuarios desde archivo', 'zentrygate')?></h2>
         <form method="post" enctype="multipart/form-data" action="<?=PLugin::$permalink?>">
             <?=wp_nonce_field ('zg_import_action', 'zg_import_nonce', true, false)?>
-            <label for="zg_import_file"><?=esc_html__ ('Archivo .txt/.csv (email,nombre,pass):', 'zentrygate')?></label><br>
-            <input type="file" id="zg_import_file" name="zg_import_file"  onclick="this.value = null;" accept=".txt,.csv" required>
+            <p class="zg-field-hint"><?=esc_html__ ('Archivo .txt/.csv (email,nombre,pass):', 'zentrygate')?></p>
+            <label for="zg_import_file" class="zg-dropzone">
+                <span class="zg-dropzone-title"><?=esc_html__ ('Arrastra el fichero aquí', 'zentrygate')?></span>
+                <span class="zg-dropzone-hint"><?=esc_html__ ('o selecciónalo desde tu equipo', 'zentrygate')?></span>
+                <span class="button button-secondary"><?=esc_html__ ('Seleccionar archivo', 'zentrygate')?></span>
+                <span class="zg-dropzone-filename" id="zg_import_filename"></span>
+            </label>
+            <input
+                type="file"
+                id="zg_import_file"
+                name="zg_import_file"
+                class="zg-visually-hidden"
+                onclick="this.value = null;"
+                onchange="document.getElementById ('zg_import_filename').textContent = this.files [0] ? this.files [0].name : '';"
+                accept=".txt,.csv"
+                required
+            >
             <p><button type="submit" name="zg_do_import" class="button button-primary"><?=esc_html__ ('Importar ahora', 'zentrygate')?></button></p>
         </form>
         </div>
@@ -418,21 +444,21 @@ class AdministratorPage
 			:
 				?>
                     <tr>
-                        <td><?=esc_html ($user->email)?></td>
-                        <td><?=esc_html ($user->name)?></td>
-                        <td>
+                        <td data-label="<?=esc_attr__ ('Email', 'zentrygate')?>"><?=esc_html ($user->email)?></td>
+                        <td data-label="<?=esc_attr__ ('Nombre', 'zentrygate')?>"><?=esc_html ($user->name)?></td>
+                        <td data-label="<?=esc_attr__ ('Estado', 'zentrygate')?>">
                             <?=$user->isEnabled ? esc_html__ ('Activo', 'zentrygate') : esc_html__ ('Deshabilitado', 'zentrygate')?>
                         </td>
-                        <td>
+                        <td data-label="<?=esc_attr__ ('Acciones', 'zentrygate')?>" class="zg-actions-cell">
                             <!-- Deshabilitar -->
-                            <form method="post" style="display:inline" action="<?=PLugin::$permalink?>">
+                            <form method="post" class="zg-inline-form" action="<?=PLugin::$permalink?>">
                                 <?=wp_nonce_field ('zg_manage_user_action', 'zg_manage_user_nonce', true, false)?>
                                 <input type="hidden" name="zg_disable_email" value="<?=esc_attr ($user->email)?>">
                                 <?php
 				if ($user->isEnabled)
 				{
 					?>
-                                	<button type="submit" name="zg_do_disable" class="button button-secondary"><?=esc_html__ ('Deshabilitar', 'zentrygate')?></button>
+                                	<button type="submit" name="zg_do_disable" class="button button-secondary zg-btn-danger"><?=esc_html__ ('Deshabilitar', 'zentrygate')?></button>
                                 	<?php
 				}
 				else
@@ -442,7 +468,7 @@ class AdministratorPage
                                 	<?php
 				}
 				?>
-                                
+
                             </form>
                             <!-- Modificar -->
                             <?php

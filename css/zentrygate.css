@@ -396,4 +396,36 @@
 .zg-alert-error { background: #fde8e8; border: 1px solid #f5b5b5; color: #7a1a1a; }
 .zg-alert .zg-alert-list { margin: 8px 0 0; padding-left: 20px; }
 
+/* --------------------------------------------------------------------
+ * Reemplazo de estilos inline por clases (UserPage.php/AdministratorPage.php).
+ * Mismos valores que los style="" que sustituyen, para que el aspecto por
+ * defecto no cambie en ningún tema; cada tema puede sobreescribir estas
+ * clases para darles su propia piel (ver AGJ_Editorial/assets/css/zentrygate.css).
+ * -------------------------------------------------------------------- */
+.zg-inline-form { display: inline; }
+
+.zg-visually-hidden {
+	position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+	overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+.zg-section-list { list-style: none; padding: 0; margin: 0; }
+.zg-section-row { margin: 0 0 1rem 0; padding: 1rem; border: 1px solid #eee; border-radius: 8px; }
+.zg-section-row-inner { display: flex; justify-content: space-between; gap: 1rem; align-items: center; flex-wrap: wrap; }
+
+.zg-total-due {
+	margin-top: 1rem; padding: 1rem; border: 1px solid #ccc; background: #f9f9f9; border-radius: 8px;
+	display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;
+}
+
+/* --------------------------------------------------------------------
+ * Bloque C — wp-admin: solo reordena el layout (columna + postboxes),
+ * la piel/colores nativos de wp-admin no se tocan.
+ * -------------------------------------------------------------------- */
+.zg-admin-column { max-width: 780px; }
+.zg-admin-column .postbox { margin-bottom: 20px; }
+.zg-postbox-danger { border-color: #d63638; }
+.zg-postbox-danger > .hndle { color: #8a2424; }
+.zg-button-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+
 

@@ -104,6 +104,12 @@ class UserPage
 		$name = ' ' . isset ($this->sessionData ['name']) ? sanitize_text_field ($this->sessionData ['name']) : '';
 		echo '<div class="wrap zg-user-page">';
 
+		if ($this->event)
+		{
+			$eventDate = ! empty ($this->event ['date']) ? date_i18n (get_option ('date_format'), strtotime ($this->event ['date'])) : '';
+			echo '<div class="zg-page-eyebrow">' . esc_html ((string) $this->event ['name']) . ($eventDate !== '' ? ' · ' . esc_html ($eventDate) : '') . '</div>';
+		}
+
 		$page_id = intval (get_option ('zg_selection_form_page'));
 		if ($page_id)
 		{
@@ -508,13 +514,13 @@ class UserPage
 	{
 		if (empty ($sections))
 		{
-			echo '<p>No hay secciones disponibles en este momento.</p>';
+			echo '<p class="zg-empty-state">' . esc_html__ ('No hay secciones disponibles en este momento.', 'zentrygate') . '</p>';
 			return;
 		}
 
 		$totalDueCents = 0; // acumularemos aquí el coste pendiente
 
-		echo '<ul style="list-style:none;padding:0;margin:0">';
+		echo '<ul class="zg-section-list">';
 
 		foreach ($sections as $sid => $section)
 		{
@@ -525,6 +531,7 @@ class UserPage
 
 			$label = (string) $section ['label'];
 			$price = (float) $section ['price'];
+			$isRuleUnlocked = ! empty ($section ['isHidden']);
 
 			$isSubscribed = isset ($this->userSubscriptions [$sid]);
 			$sub = $isSubscribed ? $this->userSubscriptions [$sid] : null;
@@ -532,18 +539,21 @@ class UserPage
 			$avail = $this->availability [$sid];
 			$availText = $avail ['text'];
 
-			echo '<li style="margin:0 0 1rem 0;padding:1rem;border:1px solid #eee;border-radius:8px">';
-			echo '<div style="display:flex;justify-content:space-between;gap:1rem;align-items:center;flex-wrap:wrap">';
-			echo '<div>';
+			echo '<li class="zg-section-row">';
+			echo '<div class="zg-section-row-inner">';
+			echo '<div class="zg-section-row-label">';
 			echo '<strong>' . esc_html ($label) . '</strong>';
-			echo ($price > 0 ? ' — ' . esc_html (number_format ($price, 2)) . ' €' : '');
-			echo '</div>';
-
-			echo '<div>';
+			if ($isRuleUnlocked)
+			{
+				echo ' <span class="zg-badge-rule">' . esc_html__ ('desbloqueada por regla', 'zentrygate') . '</span>';
+			}
+			echo '<div class="zg-section-row-meta">';
+			echo '<span class="zg-price">' . ($price > 0 ? esc_html (number_format ($price, 2)) . ' €' : esc_html__ ('Gratuita', 'zentrygate')) . '</span>';
 
 			$allowButton = TRUE;
 			$buttonText = 'Suscribirme';
 			$buttonValue = 'subscribe_section';
+			$buttonClass = 'button button-primary';
 
 			if ($isSubscribed)
 			{
@@ -551,9 +561,10 @@ class UserPage
 
 				$needsPayment = $sub ['requiresPayment'];
 
-				$estadoTxt = $needsPayment ? ' (pendiente de pago)' : ($this->sectionsAll [$sid] ['price'] > 0 ? ' (abonado)' : '(Suscrito)');
+				$estadoTxt = $needsPayment ? __ ('Pendiente de pago', 'zentrygate') : ($this->sectionsAll [$sid] ['price'] > 0 ? __ ('Abonado', 'zentrygate') : __ ('Suscrito', 'zentrygate'));
+				$estadoCode = $needsPayment ? 'pending' : 'subscribed';
 
-				echo '<span style="margin-right:1rem"> ' . $estadoTxt . '</span>';
+				echo '<span class="zg-status-text zg-status-' . esc_attr ($estadoCode) . '">' . esc_html ($estadoTxt) . '</span>';
 
 				// Enlace de pago si pendiente y habilitado
 				if ($needsPayment)
@@ -563,26 +574,32 @@ class UserPage
 
 				$buttonText = 'Desuscribirme';
 				$buttonValue = 'unsubscribe_section';
+				$buttonClass = 'button button-secondary';
 			}
 			else
 			{
 				// Mensaje de disponibilidad
-				echo '<span style="margin-right:1rem">' . esc_html ($availText) . '</span>';
+				echo '<span class="zg-availability zg-availability-' . esc_attr ($avail ['code']) . '">' . esc_html ($availText) . '</span>';
 
 				// Botón suscribirse (solo si no está sin plazas)
 				$allowButton = ($avail ['code'] !== 'none');
 			}
+			echo '</div>'; // .zg-section-row-meta
+			echo '</div>'; // .zg-section-row-label
+
+			echo '<div class="zg-section-row-action">';
 
 			// Formulario de
-			echo '<form method="post" style="display:inline"  action="' . PLugin::$permalink . '">';
+			echo '<form method="post" class="zg-inline-form" action="' . PLugin::$permalink . '">';
 
 			wp_nonce_field ("zg_subscribe_{$this->event ['id']}_" . (string) $section ['id'], '_zg_nonce');
-			echo '<button type="submit" class="button button-primary" name="zg_direct_action" value="' . $buttonValue . '"' . ($allowButton ? '' : ' disabled') . '>' . $buttonText . '</button>';
+			echo '<button type="submit" class="' . esc_attr ($buttonClass) . '" name="zg_direct_action" value="' . $buttonValue . '"' . ($allowButton ? '' : ' disabled') . '>' . $buttonText . '</button>';
 			echo '<input type="hidden" name="eventId" value="' . esc_attr ($this->event ['id']) . '"/>';
 			echo '<input type="hidden" name="sectionId" value="' . esc_attr ($sid) . '"/>';
 			echo '</form>';
 
-			echo '</div></div>';
+			echo '</div>'; // .zg-section-row-action
+			echo '</div>'; // .zg-section-row-inner
 			echo '</li>';
 		}
 
@@ -592,10 +609,12 @@ class UserPage
 		if ($this->paymentsEnabled && $totalDueCents > 0)
 		{
 			$totalDueEuros = number_format ($totalDueCents / 100, 2);
-			echo '<div style="margin-top:1rem;padding:1rem;border:1px solid #ccc;background:#f9f9f9;border-radius:8px">';
-			echo '<strong>Total pendiente de pago: ' . esc_html ($totalDueEuros) . ' €</strong>';
-
-			echo '<a class="button" href="' . esc_url (add_query_arg ([ 'zg-stripe-action' => 'call-stripe'], get_permalink ())) . '" style="margin-right:.5rem">Abonar</a>';
+			echo '<div class="zg-total-due">';
+			echo '<div class="zg-total-due-info">';
+			echo '<div class="zg-total-due-label">' . esc_html__ ('Total pendiente de pago', 'zentrygate') . '</div>';
+			echo '<div class="zg-total-due-amount">' . esc_html ($totalDueEuros) . ' €</div>';
+			echo '</div>';
+			echo '<a class="button button-primary" href="' . esc_url (add_query_arg ([ 'zg-stripe-action' => 'call-stripe'], get_permalink ())) . '">' . esc_html__ ('Abonar', 'zentrygate') . '</a>';
 			echo '</div>';
 		}
 	}

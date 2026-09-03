@@ -324,6 +324,13 @@ endforeach
         <form method="post" class="zg-cookie-form" aria-labelledby="zg-cookie-title" action="<?=PLugin::$permalink?>">
             <?php
 		wp_nonce_field ('zg_cookie_consent_action', 'zg_cookie_consent_nonce');
+		?>
+            <div class="zg-form-header">
+                <div class="zg-form-eyebrow"><?=esc_html__ ('Aviso de cookies', 'zentrygate');?></div>
+                <h2 id="zg-cookie-title"><?=esc_html__ ('Uso de cookies', 'zentrygate');?></h2>
+            </div>
+            <div class="zg-form-body">
+                <?php
 		$page_id = intval (get_option ('zg_cookie_prompt_page'));
 		$buttonText = "Continuar";
 		if ($page_id)
@@ -336,6 +343,7 @@ endforeach
 			echo '<p>' . esc_html__ ('Por favor, acepta el uso de cookies para poder reservar tu asistencia a las jornadas.', 'zentrygate') . '</p>';
 		}
 		?>
+            </div>
             <div class="zg-form-footer">
                 <button type="submit" name="accept_ZentryGate_cookie" class="button button-primary">
                     <?=$buttonText?>
@@ -354,13 +362,20 @@ endforeach
 		?>
         <form method="post" class="zg-login-form" aria-labelledby="zg-login-title" action="<?=PLugin::$permalink?>">
             <?php
+		wp_nonce_field ('zg_login_action', 'zg_login_nonce');
+		?>
+            <div class="zg-form-header">
+                <div class="zg-form-eyebrow"><?=esc_html__ ('Acceso', 'zentrygate');?></div>
+                <h2 id="zg-login-title"><?=esc_html__ ('Inicia sesión', 'zentrygate');?></h2>
+            </div>
+            <?php
 		if (! empty (self::$lastErrors))
 		{
 			self::renderErrors (self::$lastErrors);
 		}
-
-		wp_nonce_field ('zg_login_action', 'zg_login_nonce');
-
+		?>
+            <div class="zg-form-body">
+                <?php
 		$page_id = intval (get_option ('zg_login_form_page'));
 		if ($page_id)
 		{
@@ -371,7 +386,6 @@ endforeach
 			echo '<p>' . esc_html__ ('Por favor, inicia sesión para acceder al sistema de reservas.', 'zentrygate') . '</p>';
 		}
 		?>
-            <div class="zg-form-body">
                 <label for="zg_email">
                     <?=esc_html__ ('Correo electrónico', 'zentrygate');?>
                     <input
@@ -999,7 +1013,10 @@ esc_html_e ('Reintentar registrarse', 'zentrygate');
             <input type="hidden" name="zg_action" value="register">
             <input type="hidden" name="redirect_to" value="<?=$redirectTo;?>">
 
-            <h2 id="zg-register-title"><?=esc_html__ ('Introduce tus datos para registrarte', 'zentrygate');?></h2>
+            <div class="zg-form-header">
+                <div class="zg-form-eyebrow"><?=esc_html__ ('Nueva cuenta', 'zentrygate');?></div>
+                <h2 id="zg-register-title"><?=esc_html__ ('Introduce tus datos para registrarte', 'zentrygate');?></h2>
+            </div>
 
             <?php
 		$old = [ ];
@@ -1091,6 +1108,8 @@ echo 'Hall Name'; // honeypot ?>
                 <?php
 		if (! empty ($extraFields))
 		{
+			echo '<div class="zg-field-divider"><span>' . esc_html__ ('Datos del evento', 'zentrygate') . '</span></div>';
+
 			foreach ($extraFields as $cfg)
 			{
 				$label = isset ($cfg ['name']) ? (string) $cfg ['name'] : '';

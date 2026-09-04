@@ -299,10 +299,17 @@ class StripeWebhook
 
 		$wpdb->query ('START TRANSACTION');
 
-		$rows = $wpdb->get_results ($wpdb->prepare ("SELECT id, eventId, sectionId, status FROM {$table} WHERE paymentIntentId=%s FOR UPDATE", $piId), ARRAY_A);
+		$rows = $wpdb->get_results ($wpdb->prepare ("SELECT id, eventId, sectionId, status, paymentStatus FROM {$table} WHERE paymentIntentId=%s FOR UPDATE", $piId), ARRAY_A);
 
 		foreach ((array) $rows as $row)
 		{
+			// Nunca degradamos una reserva ya cobrada: un evento de caducidad/cancelación que
+			// llegue tarde no puede convertir un pago bueno en 'failed'.
+			if (in_array ($row ['paymentStatus'], [ 'succeeded', 'refunded', 'partially_refunded'], true))
+			{
+				continue;
+			}
+
 			$wasConsumingCapacity = in_array ($row ['status'], $capacityConsumingStatuses, true);
 
 			$set = [ 'paymentStatus' => $newPaymentStatus, 'updatedAt' => $now, 'stripePayload' => $payloadJson];

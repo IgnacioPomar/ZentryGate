@@ -129,7 +129,8 @@ if (! class_exists ('\ZentryGate\Payments\StripeCheckout'))
 			}
 
 			// Construye parámetros de la Checkout Session
-			$expiresAt = time () + 30 * 60; // 30 minutos
+			$sessionTtl = 30 * 60; // 30 minutos
+			$expiresAt = time () + $sessionTtl;
 			$meta = is_array ($metadata) ? $metadata : [ ];
 
 			// Stripe recomienda strings en metadata
@@ -151,7 +152,7 @@ if (! class_exists ('\ZentryGate\Payments\StripeCheckout'))
 			$clientReferenceId = isset ($metaStr ['reservationId']) ? $metaStr ['reservationId'] : null;
 
 			// Idempotencia: usa reservationId si existe; si no, hash de parámetros
-			$idempotencyKey = $this->buildIdempotencyKey ($amountCents, $currency, $successUrl, $cancelUrl, $metaStr);
+			$idempotencyKey = $this->buildIdempotencyKey ($amountCents, $currency, $successUrl, $cancelUrl, $metaStr, $sessionTtl);
 
 			$params = [ 'mode' => 'payment', 'success_url' => $successUrl, 'cancel_url' => $cancelUrl, 'expires_at' => $expiresAt, 'line_items' => [ [ 'quantity' => 1, 'price_data' => [ 'currency' => $currency, 'unit_amount' => $amountCents, 'product_data' => [ 'name' => $concepto]]]],
 					'metadata' => $metaStr];
@@ -193,13 +194,21 @@ if (! class_exists ('\ZentryGate\Payments\StripeCheckout'))
 		 * Genera una idempotency key estable para evitar sesiones duplicadas.
 		 * Si hay reservationId en metadata, la usa como base.
 		 */
-		private function buildIdempotencyKey (int $amountCents, string $currency, string $successUrl, string $cancelUrl, array $metadata): string
+		private function buildIdempotencyKey (int $amountCents, string $currency, string $successUrl, string $cancelUrl, array $metadata, int $sessionTtl = 1800): string
 		{
 			// Constante base (ej. la reserva o el usuario+evento)
 			$base = $metadata ['reservationId'] ?? (($metadata ['userId'] ?? '') . '_' . ($metadata ['eventId'] ?? '') . '_' . ($metadata ['sectionId'] ?? ''));
 
+			// Ventana temporal del tamaño de la vida de la sesión: dentro de la misma ventana, repetir
+			// la llamada devuelve la sesión ya creada (protege del doble clic y de un reintento sobre una
+			// sesión que sigue viva, donde Stripe permite reintentar el pago). Pasada la ventana, la sesión
+			// anterior ya ha caducado y hace falta una clave nueva para poder crear otra: sin esto, la clave
+			// de idempotencia (que vive 24 h en Stripe) devolvería una sesión muerta y el pago sería
+			// imposible de reintentar.
+			$window = intdiv (time (), max (60, $sessionTtl));
+
 			// Payload reducido solo a lo que define "este intento"
-			$payload = wp_json_encode ([ 'amount' => $amountCents, 'currency' => $currency, 'reservationId' => $metadata ['reservationId'] ?? null], JSON_UNESCAPED_UNICODE);
+			$payload = wp_json_encode ([ 'amount' => $amountCents, 'currency' => $currency, 'reservationId' => $metadata ['reservationId'] ?? null, 'items' => $metadata ['items'] ?? null, 'window' => $window], JSON_UNESCAPED_UNICODE);
 
 			// Hash corto reproducible
 			$hash = substr (hash ('sha256', $payload), 0, 12);

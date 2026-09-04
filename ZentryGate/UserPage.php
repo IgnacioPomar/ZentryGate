@@ -470,7 +470,12 @@ class UserPage
 			$hidden = isset ($sectionMeta ['isHidden']) ? (bool) $sectionMeta ['isHidden'] : null;
 
 			// Derivados útiles para la UI
-			$requiresPayment = ($status === 'pending_payment' && ($r ['paymentStatus'] ?? 'none') === 'none');
+			$payStatus = (string) ($r ['paymentStatus'] ?? 'none');
+
+			// Un pago rechazado o cancelado debe poder reintentarse: la plaza sigue reservada.
+			// 'processing' queda fuera a propósito (pago asíncrono en vuelo: no re-cobrar).
+			$requiresPayment = ($status === 'pending_payment' && in_array ($payStatus, [ 'none', 'failed', 'canceled'], true));
+			$paymentFailed = ($status === 'pending_payment' && in_array ($payStatus, [ 'failed', 'canceled'], true));
 			$canUnsubscribe = $isActive && in_array ($status, [ 'held', 'pending_payment', 'confirmed', 'waiting_list'], true);
 
 			$bySection [$sid] = [ 'reservationId' => (int) $r ['id'], 'sectionId' => $sid, 'eventId' => (int) $r ['eventId'], 'status' => $status, 'paymentStatus' => (string) $r ['paymentStatus'], 'amountCents' => isset ($r ['amountCents']) ? (int) $r ['amountCents'] : null,
@@ -480,7 +485,7 @@ class UserPage
 					'attendanceStatus' => $r ['attendanceStatus'] ?? 'none', 'createdAt' => $r ['createdAt'] ?? null, 'updatedAt' => $r ['updatedAt'] ?? null, 
 
 					// Ayudas para la vista
-					'isActive' => $isActive, 'requiresPayment' => $requiresPayment, 'canUnsubscribe' => $canUnsubscribe, 
+					'isActive' => $isActive, 'requiresPayment' => $requiresPayment, 'paymentFailed' => $paymentFailed, 'canUnsubscribe' => $canUnsubscribe,
 
 					// Meta de la sección (si existe en el evento)
 					'sectionLabel' => $label, 'sectionPrice' => $price, 'sectionIsHidden' => $hidden];
@@ -534,7 +539,9 @@ class UserPage
 			$price = (float) $section ['price'];
 			$isRuleUnlocked = ! empty ($section ['isHidden']);
 
-			$isSubscribed = isset ($this->userSubscriptions [$sid]);
+			// Una reserva cancelada/expirada no cuenta como suscripción: su plaza ya se liberó,
+			// así que debe mostrarse como no suscrito para poder volver a suscribirse.
+			$isSubscribed = ! empty ($this->userSubscriptions [$sid] ['isActive']);
 			$sub = $isSubscribed ? $this->userSubscriptions [$sid] : null;
 
 			$avail = $this->availability [$sid];
@@ -562,8 +569,22 @@ class UserPage
 
 				$needsPayment = $sub ['requiresPayment'];
 
-				$estadoTxt = $needsPayment ? __ ('Pendiente de pago', 'zentrygate') : ($this->sectionsAll [$sid] ['price'] > 0 ? __ ('Abonado', 'zentrygate') : __ ('Suscrito', 'zentrygate'));
-				$estadoCode = $needsPayment ? 'pending' : 'subscribed';
+				if (! empty ($sub ['paymentFailed']))
+				{
+					// Nunca "Abonado": el cobro falló y la plaza sigue reservada esperando el reintento.
+					$estadoTxt = __ ('Pago rechazado: reinténtalo', 'zentrygate');
+					$estadoCode = 'failed';
+				}
+				elseif ($needsPayment)
+				{
+					$estadoTxt = __ ('Pendiente de pago', 'zentrygate');
+					$estadoCode = 'pending';
+				}
+				else
+				{
+					$estadoTxt = ($this->sectionsAll [$sid] ['price'] > 0) ? __ ('Abonado', 'zentrygate') : __ ('Suscrito', 'zentrygate');
+					$estadoCode = 'subscribed';
+				}
 
 				echo '<span class="zg-status-text zg-status-' . esc_attr ($estadoCode) . '">' . esc_html ($estadoTxt) . '</span>';
 
@@ -920,12 +941,29 @@ class UserPage
 			return false;
 		}
 
-		// 5) Insertar reserva
-		$sql = "INSERT INTO {$tableReservations}
+		// 5) Crear la reserva.
+		// Si quedaba una fila cancelada/expirada la revivimos: la UNIQUE (eventId, sectionId, userId)
+		// impide insertar una segunda. Se limpian los datos de Stripe del intento anterior para que
+		// un webhook tardío de aquel PaymentIntent no toque esta reserva nueva.
+		if ($existing)
+		{
+			$sql = "UPDATE {$tableReservations}
+                       SET status=%s, paymentStatus=%s, amountCents=%s, currency=%s,
+                           paymentIntentId=NULL, latestChargeId=NULL, refundedCents=NULL,
+                           receiptUrl=NULL, stripePayload=NULL,
+                           confirmedAt={$confirmSql}, cancelledAt=NULL, updatedAt={$nowSql}
+                     WHERE id=%d";
+
+			$ok = $wpdb->query ($wpdb->prepare ($sql, $status, $payStatus, $amountCt, $currency, (int) $existing ['id']));
+		}
+		else
+		{
+			$sql = "INSERT INTO {$tableReservations}
             (userId, eventId, sectionId, status, paymentStatus, amountCents, currency, confirmedAt, createdAt, updatedAt)
             VALUES (%d, %d, %s, %s, %s, %s, %s, {$confirmSql}, {$nowSql}, {$nowSql})";
 
-		$ok = $wpdb->query ($wpdb->prepare ($sql, $userId, $eventId, $sectionId, $status, $payStatus, $amountCt, $currency));
+			$ok = $wpdb->query ($wpdb->prepare ($sql, $userId, $eventId, $sectionId, $status, $payStatus, $amountCt, $currency));
+		}
 
 		if ($ok === false)
 		{

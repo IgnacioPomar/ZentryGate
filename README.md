@@ -34,8 +34,12 @@ plugin root first - without it the Stripe SDK is missing and payments fail silen
    already active, deactivate and reactivate it.
 
 > **Upgrading from a pre-Composer install:** earlier versions expected the SDK to be
-> unzipped by hand into `vendor/stripe-php/`. Delete that folder on the server after
-> updating, so two copies of the SDK do not coexist.
+> unzipped by hand into `vendor/stripe-php/`. WordPress' own update flows ("Update now",
+> auto-updates, or uploading the ZIP and choosing "Replace current with uploaded") delete
+> the whole plugin directory first, so that stale folder goes away on its own. It only
+> survives if you deploy by copying files over the old ones (FTP, `rsync` without
+> `--delete`); nothing references it any more, so it is dead weight rather than a
+> conflict, but it is worth removing.
 
 ## Tables Created
 

@@ -16,6 +16,7 @@ class Auth
 	private const LOGON_ON_VALIDATE = TRUE;
 	public static bool $isEmailVerified = false;
 	protected static array $lastErrors = [ ];
+	private static string $lastMailStatus = '';
 	private static bool $isInitialized = false;
 
 	// ❌ Eliminado: $sessionDir y $cookieData
@@ -246,6 +247,27 @@ class Auth
 		$data = get_transient ($prefix . $key);
 		if ($data !== false) delete_transient ($prefix . $key);
 		return is_array ($data) ? $data : [ ];
+	}
+
+
+	/**
+	 * Traza de los envíos de correo. Guarda además el último motivo para poder mostrarlo
+	 * a un administrador, ya que el aviso público es neutro y oculta los fallos.
+	 */
+	private static function logMail (string $event, array $ctx = [ ]): void
+	{
+		self::$lastMailStatus = $event;
+		error_log ('[ZentryGate][mail] ' . $event . ($ctx ? ' ' . wp_json_encode ($ctx, JSON_UNESCAPED_UNICODE) : ''));
+	}
+
+
+	/**
+	 * Enganchado a 'wp_mail_failed': WP Mail SMTP publica ahí el error real de PHPMailer/SMTP.
+	 */
+	public static function logMailFailure (\WP_Error $error): void
+	{
+		$data = $error->get_error_data ();
+		error_log ('[ZentryGate][mail] wp_mail_failed ' . $error->get_error_message () . ' ' . wp_json_encode (is_array ($data) ? $data : [ 'data' => $data], JSON_UNESCAPED_UNICODE));
 	}
 
 
@@ -587,6 +609,7 @@ endforeach
 	}
 	private const RESET_TOKEN_MAX_MINUTES = 30;
 	private const RESET_TOKEN_COOL_DOWN = 1;
+	private const RESET_TOKEN_RESEND_GUARD_SEC = 20;
 
 
 	private static function processRecoveryChangePassword (): bool
@@ -729,6 +752,8 @@ esc_html_e ('Cambiar contraseña', 'zentrygate');
 				return false;
 			}
 
+			// El aviso posterior es siempre neutro para no revelar si el email existe; el motivo
+			// real del envío queda en el log y solo se muestra a administradores.
 			self::sendPasswordResetToken ($email);
 			return true;
 		}
@@ -745,14 +770,68 @@ esc_html_e ('Cambiar contraseña', 'zentrygate');
 	 */
 	public static function renderRecoveryRequested (): void
 	{
+		// El formulario de registro ya revela si un correo está dado de alta ("Ya existe una
+		// cuenta con ese correo electrónico"), así que ocultarlo aquí no protegía de nada y
+		// dejaba al usuario sin saber que el problema era no estar inscrito.
+		if (self::$lastMailStatus === 'no_user')
+		{
+			self::renderRecoveryUnknownEmail ();
+			return;
+		}
+
 		?>
         <div class="zg-notice zg-notice-success" role="alert" aria-live="polite" aria-labelledby="zg-recovery-requested-title">
             <strong id="zg-recovery-requested-title"><?=esc_html__ ('Solicitud de recuperación enviada', 'zentrygate');?></strong>
-            <p><?=esc_html__ ('Si el correo electrónico proporcionado existe en nuestro sistema, recibirás por correo electrónico un enlace para restablecer tu contraseña.', 'zentrygate');?></p>
-            <p class="zg-auth-links"><a href="<?=esc_url (add_query_arg ('zg_action', 'login'));?>"><?=esc_html__ ('Ir a pantalla de login', 'zentrygate');?></a></p>
+            <p><?=esc_html__ ('Si la cuenta está activa, recibirás en breve un correo con el enlace para restablecer tu contraseña. Revisa también la carpeta de spam.', 'zentrygate');?></p>
+            <p class="zg-auth-links"><a href="<?=esc_url (add_query_arg ('zg_action', 'login', Plugin::$permalink));?>"><?=esc_html__ ('Ir a pantalla de login', 'zentrygate');?></a></p>
+            <?php
+		self::renderMailDebugNotice ();
+		?>
         </div>
         <?php
 	}
+
+
+	/**
+	 * Motivo real del último intento de envío, solo para administradores o con ZG_MAIL_DEBUG:
+	 * el aviso de arriba es deliberadamente neutro y oculta cualquier fallo.
+	 */
+	public static function renderMailDebugNotice (): void
+	{
+		if (self::$lastMailStatus === '')
+		{
+			return;
+		}
+
+		if (! (defined ('ZG_MAIL_DEBUG') && ZG_MAIL_DEBUG) && ! current_user_can ('manage_options'))
+		{
+			return;
+		}
+
+		echo '<p class="zg-mail-debug"><code>[ZentryGate] ' . esc_html (self::$lastMailStatus) . '</code></p>';
+	}
+
+	/**
+	 * Aviso cuando el correo no corresponde a ninguna cuenta: se le ofrece darse de alta.
+	 */
+	public static function renderRecoveryUnknownEmail (): void
+	{
+		?>
+        <div class="zg-notice zg-notice-warn" role="alert" aria-live="assertive" aria-labelledby="zg-recovery-unknown-title">
+            <strong id="zg-recovery-unknown-title"><?=esc_html__ ('No hay ninguna cuenta con ese correo electrónico', 'zentrygate');?></strong>
+            <p><?=esc_html__ ('Comprueba que lo has escrito bien. Si todavía no te has inscrito, puedes crear una cuenta ahora.', 'zentrygate');?></p>
+            <p class="zg-auth-links">
+                <a href="<?=esc_url (add_query_arg ('zg_action', 'register', Plugin::$permalink));?>"><?=esc_html__ ('Crear una cuenta', 'zentrygate');?></a>
+                <a href="<?=esc_url (add_query_arg ('zg_action', 'pass_recovery', Plugin::$permalink));?>"><?=esc_html__ ('Probar con otro correo', 'zentrygate');?></a>
+                <a href="<?=esc_url (add_query_arg ('zg_action', 'login', Plugin::$permalink));?>"><?=esc_html__ ('Ir a pantalla de login', 'zentrygate');?></a>
+            </p>
+            <?php
+		self::renderMailDebugNotice ();
+		?>
+        </div>
+        <?php
+	}
+
 
 
 	/**
@@ -774,9 +853,6 @@ esc_html_e ('Cambiar contraseña', 'zentrygate');
 		?>
         <form method="get" class="zg-recovery-ask-email-form" aria-labelledby="zg-recovery-title" action="<?=PLugin::$permalink?>">
             <input type="hidden" name="zg_action" value="pass_recovery">
-            <?php
-		wp_nonce_field ('zg_pass_recovery_action', 'zg_pass_recovery_nonce');
-		?>
             <div class="zg-form-header">
                 <h2 id="zg-recovery-title"><?php
 
@@ -835,7 +911,12 @@ esc_html_e ('Enviar enlace', 'zentrygate');
 		{
 			return false;
 		}
-		$requested = strtotime ($resetRequestedAt);
+		// resetRequestedAt se guarda con current_time ('mysql'), o sea en hora del sitio.
+		// strtotime () lo interpretaría como UTC (WordPress fija esa zona en PHP), lo que adelanta
+		// la marca tantas horas como el gmt_offset y produce intervalos negativos: con Europe/Madrid
+		// cualquier intervalo se daba por vigente durante las 2 h siguientes a la solicitud.
+		$requested = (int) get_gmt_from_date ($resetRequestedAt, 'U');
+
 		return (time () - $requested) < $intervalSec;
 	}
 
@@ -875,6 +956,8 @@ esc_html_e ('Enviar enlace', 'zentrygate');
 
 	/**
 	 * Genera o reenvía el token de recuperación y envía el email.
+	 * El aviso que ve el visitante es siempre neutro, así que aquí se deja traza (self::logMail)
+	 * de cada salida: sin ella un fallo de envío es indistinguible de un éxito.
 	 */
 	public static function sendPasswordResetToken (string $email): bool
 	{
@@ -885,15 +968,31 @@ esc_html_e ('Enviar enlace', 'zentrygate');
                FROM {$wpdb->prefix}zgUsers
               WHERE email = %s", $email), ARRAY_A);
 
-		if (! $user || ! (bool) $user ['isEnabled'])
+		if (! $user)
 		{
+			self::logMail ('no_user', [ 'email' => $email]);
 			return false;
 		}
 
-		// Rate‐limit: evitar envíos demasiado frecuentes
-		if (self::isStillValidToken ($user ['resetRequestedAt'], self::RESET_TOKEN_COOL_DOWN * MINUTE_IN_SECONDS))
+		if (! (bool) $user ['isEnabled'])
 		{
+			self::logMail ('disabled', [ 'email' => $email]);
 			return false;
+		}
+
+		// Guarda dura contra flood: doble clic o recarga inmediata del formulario
+		if (self::isStillValidToken ($user ['resetRequestedAt'], self::RESET_TOKEN_RESEND_GUARD_SEC))
+		{
+			self::logMail ('flood_guard', [ 'email' => $email, 'resetRequestedAt' => $user ['resetRequestedAt']]);
+			return false;
+		}
+
+		if (! empty ($user ['resetToken']) && self::isStillValidToken ($user ['resetRequestedAt'], self::RESET_TOKEN_COOL_DOWN * MINUTE_IN_SECONDS))
+		{
+			// Dentro del cooldown reenviamos el token vigente en lugar de descartar la petición
+			// en silencio: si el primer envío falló, el usuario tiene que poder reintentar.
+			$token = $user ['resetToken'];
+			self::logMail ('resend_existing_token', [ 'email' => $email, 'resetRequestedAt' => $user ['resetRequestedAt']]);
 		}
 		else
 		{
@@ -905,18 +1004,36 @@ esc_html_e ('Enviar enlace', 'zentrygate');
 			$updated = $wpdb->update ("{$wpdb->prefix}zgUsers", [ 'resetToken' => $token, 'resetRequestedAt' => $now], [ 'email' => $email], [ '%s', '%s'], [ '%s']);
 			if (false === $updated)
 			{
+				self::logMail ('db_update_failed', [ 'email' => $email, 'dbError' => $wpdb->last_error]);
 				return false;
 			}
 		}
 
 		// Envío de email
 		$emailEncoded = rtrim (strtr (base64_encode ($email), '+/', '-_'), '=');
-		$reset_link = add_query_arg ([ 'zg_action' => 'pass-reset', 'zg_recover_email' => $emailEncoded, 'token' => $token], get_permalink ());
+
+		// get_permalink () devuelve la portada cuando la plantilla renderiza el plugin embebido,
+		// así que usamos el permalink que la propia plantilla nos ha pasado.
+		$base = ! empty (Plugin::$permalink) ? Plugin::$permalink : get_permalink ();
+		$reset_link = add_query_arg ([ 'zg_action' => 'pass-reset', 'zg_recover_email' => $emailEncoded, 'token' => $token], $base);
 		$subject = sprintf (__ ('Recupera tu contraseña en %s', 'zentrygate'), wp_specialchars_decode (get_bloginfo ('name'), ENT_QUOTES));
-		$message = sprintf (__ ("Hola %1\$s,\n\nHaz clic en este enlace (válido durante %2\$d minutos) para restablecer tu contraseña:\n\n%3\$s\n\nSi no lo solicitaste, ignora este correo.", 'zentrygate'), esc_html ($user ['name']), self::RESET_TOKEN_MAX_MINUTES, esc_url ($reset_link));
+
+		// El cuerpo es text/plain: nada de esc_html () ni esc_url (), que introducen entidades HTML
+		// (esc_url convierte los '&' del enlace en '&#038;' y rompe los parámetros del token).
+		$message = sprintf (__ ("Hola %1\$s,\n\nHaz clic en este enlace (válido durante %2\$d minutos) para restablecer tu contraseña:\n\n%3\$s\n\nSi no lo solicitaste, ignora este correo.", 'zentrygate'), $user ['name'], self::RESET_TOKEN_MAX_MINUTES, esc_url_raw ($reset_link));
+
+		// Sin cabecera From: WP Mail SMTP impone su propio remitente (y el mailer de Gmail obliga
+		// a que sea la cuenta autenticada), así que fijarlo aquí solo crearía un conflicto.
 		$headers = [ 'Content-Type: text/plain; charset=UTF-8'];
 
-		return (bool) wp_mail ($email, $subject, $message, $headers);
+		if (! wp_mail ($email, $subject, $message, $headers))
+		{
+			self::logMail ('wp_mail_false', [ 'email' => $email]);
+			return false;
+		}
+
+		self::logMail ('sent', [ 'email' => $email]);
+		return true;
 	}
 
 

@@ -17,6 +17,9 @@ class Plugin
 		// Work with cookies and sessions
 		add_action ('init', [ Auth::class, 'init']);
 
+		// Traza del error real de envío: WP Mail SMTP publica aquí el fallo de PHPMailer/SMTP
+		add_action ('wp_mail_failed', [ Auth::class, 'logMailFailure']);
+
 		// Redirects handles (stripe)
 		add_action ('template_redirect', [ Payments\StripeCheckout::class, 'handleStripeRedirects']);
 		\ZentryGate\Payments\StripeWebhook::register ();

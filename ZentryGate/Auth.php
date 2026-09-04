@@ -667,7 +667,10 @@ endforeach
 	{
 		$email = isset ($_GET ['zg_recover_email']) ? (string) wp_unslash ($_GET ['zg_recover_email']) : '';
 		$token = isset ($_GET ['token']) ? sanitize_text_field (wp_unslash ($_GET ['token'])) : '';
-		$redirectTo = esc_url (add_query_arg ([ 'zg_action' => 'pass-reset'], get_permalink ()));
+		// Como en el enlace del correo: get_permalink () devuelve la página padre cuando el
+		// plugin se renderiza embebido, y ahí el aviso de éxito o de error no llegaría a verse.
+		$redirectBase = ! empty (Plugin::$permalink) ? Plugin::$permalink : get_permalink ();
+		$redirectTo = esc_url (add_query_arg ([ 'zg_action' => 'pass-reset'], $redirectBase));
 		$actionUrl = esc_url (admin_url ('admin-post.php'));
 
 		$errors = self::flashTake ('zg_err_', $_GET ['errkey'] ?? '');
@@ -916,8 +919,11 @@ esc_html_e ('Enviar enlace', 'zentrygate');
 		// la marca tantas horas como el gmt_offset y produce intervalos negativos: con Europe/Madrid
 		// cualquier intervalo se daba por vigente durante las 2 h siguientes a la solicitud.
 		$requested = (int) get_gmt_from_date ($resetRequestedAt, 'U');
+		$elapsed = time () - $requested;
 
-		return (time () - $requested) < $intervalSec;
+		// Una marca en el futuro (reloj desajustado, edición manual en BD) daría un intervalo
+		// negativo, es decir vigente para siempre: la damos por no válida.
+		return $elapsed >= 0 && $elapsed < $intervalSec;
 	}
 
 
@@ -1218,7 +1224,10 @@ esc_html_e ('Reintentar registrarse', 'zentrygate');
 			return isset ($_POST [$name]) && ($_POST [$name] === '1' || $_POST [$name] === 'on');
 		};
 
-		$redirectTo = esc_url (add_query_arg ([ 'zg_action' => 'register'], get_permalink ()));
+		// Como en el enlace del correo: get_permalink () devuelve la página padre cuando el
+		// plugin se renderiza embebido, y ahí el aviso de éxito o de error no llegaría a verse.
+		$redirectBase = ! empty (Plugin::$permalink) ? Plugin::$permalink : get_permalink ();
+		$redirectTo = esc_url (add_query_arg ([ 'zg_action' => 'register'], $redirectBase));
 		$actionUrl = esc_url (admin_url ('admin-post.php'));
 		?>
         <form method="post" class="zg-register-form" aria-labelledby="zg-register-title" novalidate action="<?=$actionUrl?>">

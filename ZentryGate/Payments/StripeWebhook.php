@@ -135,8 +135,12 @@ class StripeWebhook
 		catch (\Throwable $e)
 		{
 			if (defined ('WP_DEBUG') && WP_DEBUG) error_log ('[Stripe] Webhook error: ' . $e->getMessage ());
-			// Devuelve 200 para evitar tormenta de reintentos si es error lógico nuestro
-			return new \WP_REST_Response ([ 'ok' => true, 'warn' => 'handled_with_error'], 200);
+			if (isset ($eventId) && $eventId !== '')
+			{
+				StripeEventsRepo::markFailed ($eventId, 500, $e->getMessage ());
+			}
+			// Devuelve 500 para que Stripe reintente el envío del evento automáticamente
+			return new \WP_REST_Response ([ 'ok' => false, 'err' => 'internal_error'], 500);
 		}
 	}
 
@@ -163,6 +167,13 @@ class StripeWebhook
 	{
 		global $wpdb;
 		$table = $wpdb->prefix . 'zgReservations';
+
+		// Para métodos de pago asíncronos la sesión puede llegar aquí como "completed"
+		// pero todavía no pagada (payment_status='unpaid'). Solo confirmamos si Stripe
+		// indica que el pago ya se completó; si no, la confirmación real llegará más
+		// tarde por payment_intent.succeeded o checkout.session.async_payment_succeeded
+		// (que reinvoca esta misma función, ya con payment_status='paid').
+		$isPaid = ((string) ($session->payment_status ?? '')) === 'paid';
 
 		// Metadata: tú enviaste 'userId' y 'items' (JSON) en payNow()
 		$meta = [ ];
@@ -207,38 +218,42 @@ class StripeWebhook
 		{
 			$eventId = (int) ($item ['eventId'] ?? 0);
 			$sectionId = (string) ($item ['sectionId'] ?? '');
+			$itemAmountCents = isset ($item ['amountCents']) ? (int) $item ['amountCents'] : null;
 
 			if (! $userId || ! $eventId || $sectionId === '')
 			{
 				continue;
 			}
 
-			// UPSERT: si existe la fila (por unique eventId-sectionId-userId) actualizamos; si no, insertamos
+			// La unicidad de (eventId, sectionId, userId) garantiza como máximo una fila.
 			$exists = (int) $wpdb->get_var ($wpdb->prepare ("SELECT id FROM {$table} WHERE userId=%d AND eventId=%d AND sectionId=%s", $userId, $eventId, $sectionId));
 
-			$setFinal = [ 'status' => 'confirmed', 'paymentStatus' => 'succeeded', 'amountCents' => $amountCents ?: null, 'currency' => $currency ?: null, 'paymentIntentId' => $piId ?: null, 'updatedAt' => $now, 'stripePayload' => $payloadJson];
-			$wherePending = [ 'userId' => $userId, 'eventId' => $eventId, 'sectionId' => $sectionId, 'paymentStatus' => 'pending_payment'];
-
-			$updated = $wpdb->update ($table, $setFinal, $wherePending, [ '%s', '%s', '%d', '%s', '%s', '%s', '%s'], [ '%d', '%d', '%s', '%s']);
-
-			// 2) Si no estaba en pending_payment:
-			if ($updated === 0)
+			if (! $isPaid)
 			{
+				// Pago asíncrono aún no confirmado: solo dejamos constancia de la sesión, sin confirmar la reserva.
 				if ($exists)
 				{
-					// 2.a) Ya había fila (p. ej., processing/none): actualiza por id (idempotente)
-					$updated2 = $wpdb->update ($table, $setFinal, [ 'id' => $exists], [ '%s', '%s', '%d', '%s', '%s', '%s', '%s'], [ '%d']);
-					if (defined ('WP_DEBUG') && WP_DEBUG) error_log ('[ZG][Stripe] updateById u=' . $userId . ' e=' . $eventId . ' s=' . $sectionId . ' => ' . var_export ($updated2, true) . ' err=' . $wpdb->last_error);
+					$wpdb->update ($table, [ 'paymentStatus' => 'processing', 'paymentIntentId' => $piId ?: null, 'updatedAt' => $now, 'stripePayload' => $payloadJson], [ 'id' => $exists], [ '%s', '%s', '%s', '%s'], [ '%d']);
 				}
-				else
-				{
-					// 2.b) No existía fila: crea ya confirmada (caso borde, seguro)
-					$insert = [ 'userId' => $userId, 'eventId' => $eventId, 'sectionId' => $sectionId, 'status' => 'confirmed', 'paymentStatus' => 'succeeded', 'amountCents' => $amountCents ?: null, 'currency' => $currency ?: null, 'paymentIntentId' => $piId ?: null, 'createdAt' => $now,
-							'updatedAt' => $now, 'stripePayload' => $payloadJson];
-					$wpdb->insert ($table, $insert, [ '%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s']);
+				continue;
+			}
 
-					if (defined ('WP_DEBUG') && WP_DEBUG) error_log ('[ZG][Stripe] insertFinal u=' . $userId . ' e=' . $eventId . ' s=' . $sectionId . ' => ' . var_export ($wpdb->insert_id, true) . ' err=' . $wpdb->last_error);
-				}
+			// No pisamos amountCents/currency de filas existentes: ya guardan el importe de su propia
+			// sección (fijado en el alta), y $amountCents aquí es el total del carrito, no por sección.
+			$setFinal = [ 'status' => 'confirmed', 'paymentStatus' => 'succeeded', 'paymentIntentId' => $piId ?: null, 'updatedAt' => $now, 'stripePayload' => $payloadJson];
+
+			if ($exists)
+			{
+				$wpdb->update ($table, $setFinal, [ 'id' => $exists], [ '%s', '%s', '%s', '%s', '%s'], [ '%d']);
+			}
+			else
+			{
+				// No existía fila (caso borde): usa el importe individual de la metadata del item;
+				// si no vino (sesiones antiguas), el total del carrito como último recurso.
+				$insert = array_merge ($setFinal, [ 'userId' => $userId, 'eventId' => $eventId, 'sectionId' => $sectionId, 'amountCents' => $itemAmountCents ?? ($amountCents ?: null), 'currency' => $currency ?: null, 'createdAt' => $now]);
+				$wpdb->insert ($table, $insert);
+
+				if (defined ('WP_DEBUG') && WP_DEBUG) error_log ('[ZG][Stripe] insertFinal u=' . $userId . ' e=' . $eventId . ' s=' . $sectionId . ' => ' . var_export ($wpdb->insert_id, true) . ' err=' . $wpdb->last_error);
 			}
 		}
 	}
@@ -246,35 +261,65 @@ class StripeWebhook
 
 	private static function onCheckoutSessionExpired ($session): void
 	{
-		global $wpdb;
-		$table = $wpdb->prefix . 'zgReservations';
 		$piId = (string) ($session->payment_intent ?? '');
 		$now = current_time ('mysql');
 		$payloadJson = json_encode ($session, JSON_UNESCAPED_UNICODE);
 
-		// self::log('Marking session expired', ['pi' => $piId]);
-
-		$wpdb->query ($wpdb->prepare ("UPDATE {$table}
-            SET paymentStatus='failed', updatedAt=%s, stripePayload=%s
-          WHERE paymentIntentId=%s", $now, $payloadJson, $piId));
-
-		// Si gestionas aforo/bloqueos temporales, libéralo aquí.
+		self::terminateReservationsByPaymentIntent ($piId, 'expired', 'failed', $payloadJson, $now);
 	}
 
 
 	private static function onPaymentIntentCanceled ($pi): void
 	{
-		global $wpdb;
-		$table = $wpdb->prefix . 'zgReservations';
 		$piId = (string) $pi->id;
 		$now = current_time ('mysql');
 		$payloadJson = json_encode ($pi, JSON_UNESCAPED_UNICODE);
 
-		// self::log('Marking PI canceled', ['pi' => $piId]);
+		self::terminateReservationsByPaymentIntent ($piId, 'cancelled', 'canceled', $payloadJson, $now);
+	}
 
-		$wpdb->query ($wpdb->prepare ("UPDATE {$table}
-            SET paymentStatus='canceled', updatedAt=%s, stripePayload=%s
-          WHERE paymentIntentId=%s", $now, $payloadJson, $piId));
+
+	/**
+	 * Cierra definitivamente las reservas ligadas a un PaymentIntent (sesión expirada o PI cancelado)
+	 * y libera el aforo de las que seguían consumiendo plaza. Idempotente: si una reserva ya no está
+	 * en un estado que consume plaza (p. ej. porque ya se procesó este mismo evento antes), no vuelve
+	 * a decrementar usedCapacity ni a tocar su status.
+	 */
+	private static function terminateReservationsByPaymentIntent (string $piId, string $newStatus, string $newPaymentStatus, string $payloadJson, string $now): void
+	{
+		global $wpdb;
+		$table = $wpdb->prefix . 'zgReservations';
+
+		if ($piId === '')
+		{
+			return;
+		}
+
+		$capacityConsumingStatuses = [ 'held', 'pending_payment'];
+
+		$wpdb->query ('START TRANSACTION');
+
+		$rows = $wpdb->get_results ($wpdb->prepare ("SELECT id, eventId, sectionId, status FROM {$table} WHERE paymentIntentId=%s FOR UPDATE", $piId), ARRAY_A);
+
+		foreach ((array) $rows as $row)
+		{
+			$wasConsumingCapacity = in_array ($row ['status'], $capacityConsumingStatuses, true);
+
+			$set = [ 'paymentStatus' => $newPaymentStatus, 'updatedAt' => $now, 'stripePayload' => $payloadJson];
+			if ($wasConsumingCapacity)
+			{
+				$set ['status'] = $newStatus;
+			}
+
+			$wpdb->update ($table, $set, [ 'id' => (int) $row ['id']]);
+
+			if ($wasConsumingCapacity)
+			{
+				CapacityRepo::release ((int) $row ['eventId'], (string) $row ['sectionId']);
+			}
+		}
+
+		$wpdb->query ('COMMIT');
 	}
 
 
@@ -310,7 +355,9 @@ class StripeWebhook
 		{
 			foreach ($rows as $r)
 			{
-				$wpdb->update ($table, [ 'status' => 'confirmed', 'paymentStatus' => 'succeeded', 'amountCents' => $amount ?: null, 'currency' => $curr ?: null, 'latestChargeId' => $latestChargeId, 'receiptUrl' => $receiptUrl, 'confirmedAt' => $now, 'updatedAt' => $now,
+				// No tocamos amountCents/currency: cada fila ya guarda el importe de su propia sección
+				// (fijado en el alta); $amount aquí es el total del PaymentIntent, no por sección.
+				$wpdb->update ($table, [ 'status' => 'confirmed', 'paymentStatus' => 'succeeded', 'latestChargeId' => $latestChargeId, 'receiptUrl' => $receiptUrl, 'confirmedAt' => $now, 'updatedAt' => $now,
 						'stripePayload' => $payloadJson], [ 'id' => (int) $r->id]);
 			}
 		}
@@ -332,9 +379,12 @@ class StripeWebhook
 				$sectionId = (string) ($item ['sectionId'] ?? '');
 				if (! $userId || ! $eventId || $sectionId === '') continue;
 
+				// Usa el importe individual de la sección si vino en la metadata; si no, el total del PI como último recurso
+				$itemAmountCents = isset ($item ['amountCents']) ? (int) $item ['amountCents'] : ($amount ?: null);
+
 				$exists = (int) $wpdb->get_var ($wpdb->prepare ("SELECT id FROM {$table} WHERE userId=%d AND eventId=%d AND sectionId=%s", $userId, $eventId, $sectionId));
 
-				$data = [ 'userId' => $userId, 'eventId' => $eventId, 'sectionId' => $sectionId, 'status' => 'confirmed', 'paymentStatus' => 'succeeded', 'amountCents' => $amount ?: null, 'currency' => $curr ?: null, 'paymentIntentId' => $piId, 'latestChargeId' => $latestChargeId,
+				$data = [ 'userId' => $userId, 'eventId' => $eventId, 'sectionId' => $sectionId, 'status' => 'confirmed', 'paymentStatus' => 'succeeded', 'amountCents' => $itemAmountCents, 'currency' => $curr ?: null, 'paymentIntentId' => $piId, 'latestChargeId' => $latestChargeId,
 						'receiptUrl' => $receiptUrl, 'confirmedAt' => $now, 'updatedAt' => $now, 'stripePayload' => $payloadJson];
 
 				if ($exists)

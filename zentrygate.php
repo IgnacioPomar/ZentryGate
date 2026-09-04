@@ -51,6 +51,7 @@ define ('ZENTRYGATE_STRIPE_READY', class_exists ('\Stripe\StripeClient'));
 require_once ZENTRYGATE_DIR . 'ZentryGate/Payments/StripeCheckout.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/Payments/StripeWebhook.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/Payments/StripeEventsRepo.php';
+require_once ZENTRYGATE_DIR . 'ZentryGate/Payments/CapacityRepo.php';
 
 // Activation hook
 register_activation_hook (__FILE__, [ \ZentryGate\Install::class, 'activate']);

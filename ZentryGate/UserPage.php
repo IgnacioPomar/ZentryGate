@@ -244,11 +244,12 @@ class UserPage
 			$label = (string) ($sec ['label'] ?? ('Sección ' . $sid));
 
 			// Sumar al total (no hay descuentos de momento)
-			$amountCents += (int) round ($price * 100);
+			$itemAmountCents = (int) round ($price * 100);
+			$amountCents += $itemAmountCents;
 
 			// Concepto y metadata
 			$conceptParts [] = $label;
-			$itemsMeta [] = [ 'eventId' => (string) $eventId, 'sectionId' => (string) $sid];
+			$itemsMeta [] = [ 'eventId' => (string) $eventId, 'sectionId' => (string) $sid, 'amountCents' => $itemAmountCents];
 		}
 
 		if ($amountCents <= 0 || empty ($itemsMeta))
@@ -970,7 +971,6 @@ class UserPage
 		}
 
 		$tableReservations = $wpdb->prefix . 'zgReservations';
-		$tableCapacity = $wpdb->prefix . 'zgCapacity';
 
 		// Inicia transacción
 		$wpdb->query ('START TRANSACTION');
@@ -1004,11 +1004,9 @@ class UserPage
 		// Si consumía plaza, liberar capacidad (si no existe fila de capacidad, no se considera error)
 		if ($consumedCapacity)
 		{
-			$capUpdated = $wpdb->query ($wpdb->prepare ("UPDATE {$tableCapacity}
-                    SET usedCapacity = GREATEST(usedCapacity - 1, 0)
-                  WHERE eventId=%d AND sectionId=%s", $eventId, $sectionId));
+			\ZentryGate\Payments\CapacityRepo::release ($eventId, $sectionId);
 
-			if ($capUpdated === false)
+			if ($wpdb->last_error)
 			{
 				$wpdb->query ('ROLLBACK');
 				self::$messages [] = [ 'type' => 'error', 'text' => 'No se pudo actualizar la capacidad.'];

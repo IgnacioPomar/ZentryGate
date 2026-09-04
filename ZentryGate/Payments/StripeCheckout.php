@@ -8,8 +8,8 @@
  * - SDK Stripe instalado con Composer: ejecutar "composer install" en la raíz del plugin.
  *
  * Uso típico:
- *   $button = new \ZentryGate\Payments\StripeCheckoutButton($secretKey);
- *   $result = $button->payNow(
+ *   $button = new \ZentryGate\Payments\StripeCheckout();
+ *   $result = $button->createSession(
  *       amountCents: 10000,                 // 100,00 EUR
  *       currency: 'EUR',
  *       concepto: 'Evento X - Cena Oficial',
@@ -19,9 +19,9 @@
  *       cancelUrl:  'https://tu-sitio.com/evento?zg_action=payment_cancel&eventId=45&sectionId=abc&resId=123'
  *   );
  *   if ($result['ok']) {
- *       // Redirige al usuario a Stripe
- *       wp_safe_redirect($result['url']);
- *       exit;
+ *       // Guarda $result['paymentIntentId'] en tus reservas ANTES de redirigir: los webhooks
+ *       // de caducidad/cancelación/fallo localizan la reserva por ese identificador.
+ *       \ZentryGate\Payments\StripeCheckout::redirectToCheckout($result['url']);
  *   } else {
  *       error_log('[Stripe] ' . $result['error']); // opcional
  *       // Muestra mensaje al usuario
@@ -98,9 +98,12 @@ if (! class_exists ('\ZentryGate\Payments\StripeCheckout'))
 		 *        	URL de éxito (regreso desde Checkout).
 		 * @param string $cancelUrl
 		 *        	URL de cancelación (regreso si usuario cancela).
-		 * @return array { ok: bool, url?: string, sessionId?: string, error?: string }
+		 * @return array { ok: bool, url?: string, sessionId?: string, paymentIntentId?: string, error?: string }
+		 *
+		 *         No redirige: devuelve la sesión creada para que el llamador pueda enlazarla con sus
+		 *         reservas (guardar el paymentIntentId) ANTES de mandar al usuario a Stripe.
 		 */
-		public function payNow (int $amountCents, string $currency, string $concepto, string $customerEmail, array $metadata, string $successUrl, string $cancelUrl): array
+		public function createSession (int $amountCents, string $currency, string $concepto, string $customerEmail, array $metadata, string $successUrl, string $cancelUrl): array
 		{
 			// Validaciones básicas
 			if (! $this->ready || ! $this->client)
@@ -154,8 +157,11 @@ if (! class_exists ('\ZentryGate\Payments\StripeCheckout'))
 			// Idempotencia: usa reservationId si existe; si no, hash de parámetros
 			$idempotencyKey = $this->buildIdempotencyKey ($amountCents, $currency, $successUrl, $cancelUrl, $metaStr, $sessionTtl);
 
+			// La metadata se replica en el PaymentIntent: Stripe NO la copia de la sesión al PI, y los
+			// eventos payment_intent.* solo traen la del propio PI. Sin esto, esos handlers no tienen
+			// forma de saber a qué reservas se refieren si el enlace por paymentIntentId fallara.
 			$params = [ 'mode' => 'payment', 'success_url' => $successUrl, 'cancel_url' => $cancelUrl, 'expires_at' => $expiresAt, 'line_items' => [ [ 'quantity' => 1, 'price_data' => [ 'currency' => $currency, 'unit_amount' => $amountCents, 'product_data' => [ 'name' => $concepto]]]],
-					'metadata' => $metaStr];
+					'metadata' => $metaStr, 'payment_intent_data' => [ 'metadata' => $metaStr]];
 
 			if (! empty ($customerEmail))
 			{
@@ -172,21 +178,32 @@ if (! class_exists ('\ZentryGate\Payments\StripeCheckout'))
 			{
 				$session = $this->client->checkout->sessions->create ($params, [ 'idempotency_key' => $idempotencyKey]);
 
-				add_filter ('allowed_redirect_hosts', function ($hosts)
-				{
-					$hosts [] = 'checkout.stripe.com';
-					$hosts [] = 'stripe.com';
-					return $hosts;
-				});
-
-				wp_safe_redirect ($session->url);
-				exit ();
+				// En mode=payment Stripe crea el PaymentIntent junto con la sesión, así que payment_intent
+				// viene ya relleno. Se devuelve para que el llamador lo guarde en sus reservas.
+				return [ 'ok' => true, 'url' => (string) $session->url, 'sessionId' => (string) $session->id, 'paymentIntentId' => (string) ($session->payment_intent ?? '')];
 			}
 			catch (\Throwable $e)
 			{
 
 				return [ 'ok' => false, 'error' => 'No se pudo iniciar el pago en Stripe. Inténtalo de nuevo en unos minutos.', 'details' => $e->getMessage ()];
 			}
+		}
+
+
+		/**
+		 * Redirige el navegador a la Checkout Session y termina la ejecución.
+		 */
+		public static function redirectToCheckout (string $url): void
+		{
+			add_filter ('allowed_redirect_hosts', function ($hosts)
+			{
+				$hosts [] = 'checkout.stripe.com';
+				$hosts [] = 'stripe.com';
+				return $hosts;
+			});
+
+			wp_safe_redirect ($url);
+			exit ();
 		}
 
 

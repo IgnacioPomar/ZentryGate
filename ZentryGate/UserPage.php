@@ -269,12 +269,46 @@ class UserPage
 
 		// Llamada a tu helper de Stripe
 		$btn = new \ZentryGate\Payments\StripeCheckout ();
-		$res = $btn->payNow ($amountCents, 'EUR', $concepto, $email, $metaPayload, $successUrl, $cancelUrl);
+		$res = $btn->createSession ($amountCents, 'EUR', $concepto, $email, $metaPayload, $successUrl, $cancelUrl);
 
-		// var_dump ($res); die ();
+		if (! empty ($res ['ok']))
+		{
+			// Enlaza las reservas con el PaymentIntent ANTES de mandar al usuario a Stripe.
+			// Los webhooks de caducidad, cancelación y fallo localizan la reserva por paymentIntentId:
+			// si no se guarda aquí, no encuentran ninguna fila y la plaza no se libera nunca.
+			$this->linkReservationsToPaymentIntent ($userId, $itemsMeta, (string) ($res ['paymentIntentId'] ?? ''));
+
+			\ZentryGate\Payments\StripeCheckout::redirectToCheckout ((string) $res ['url']);
+		}
 
 		$errorMsg = $res ['error'] ?? 'No se pudo iniciar el proceso de pago.';
 		self::$messages [] = [ 'type' => 'error', 'text' => $errorMsg, 'details' => $res ['details'] ?? ''];
+	}
+
+
+	/**
+	 * Guarda el paymentIntentId en las reservas que se van a pagar, para que los webhooks
+	 * posteriores (expiración, cancelación, fallo, reembolso) puedan localizarlas.
+	 */
+	private function linkReservationsToPaymentIntent (int $userId, array $itemsMeta, string $paymentIntentId): void
+	{
+		global $wpdb;
+
+		if ($paymentIntentId === '')
+		{
+			// Sin PaymentIntent no hay forma de enlazar: los webhooks de caducidad/fallo quedarían ciegos.
+			if (defined ('WP_DEBUG') && WP_DEBUG) error_log ('[ZG][Stripe] La Checkout Session no devolvió payment_intent: las reservas del usuario ' . $userId . ' quedan sin enlazar.');
+			return;
+		}
+
+		$tableReservations = $wpdb->prefix . 'zgReservations';
+		$now = current_time ('mysql');
+
+		foreach ($itemsMeta as $item)
+		{
+			$wpdb->update ($tableReservations, [ 'paymentIntentId' => $paymentIntentId, 'updatedAt' => $now],
+					[ 'userId' => $userId, 'eventId' => (int) ($item ['eventId'] ?? 0), 'sectionId' => (string) ($item ['sectionId'] ?? '')], [ '%s', '%s'], [ '%d', '%d', '%s']);
+		}
 	}
 
 

@@ -175,7 +175,7 @@ class StripeWebhook
 		// (que reinvoca esta misma función, ya con payment_status='paid').
 		$isPaid = ((string) ($session->payment_status ?? '')) === 'paid';
 
-		// Metadata: tú enviaste 'userId' y 'items' (JSON) en payNow()
+		// Metadata: tú enviaste 'userId' y 'items' (JSON) en createSession()
 		$meta = [ ];
 		// 1) metadata desde la session
 		if (isset ($session->metadata))

@@ -41,6 +41,13 @@ require_once ZENTRYGATE_DIR . 'ZentryGate/Auth.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/AdministratorPage.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/UserPage.php';
 
+// Dependencias de Composer (SDK de Stripe). Puede faltar si no se ha ejecutado composer install.
+if (is_readable (ZENTRYGATE_DIR . 'vendor/autoload.php'))
+{
+	require_once ZENTRYGATE_DIR . 'vendor/autoload.php';
+}
+define ('ZENTRYGATE_STRIPE_READY', class_exists ('\Stripe\StripeClient'));
+
 require_once ZENTRYGATE_DIR . 'ZentryGate/Payments/StripeCheckout.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/Payments/StripeWebhook.php';
 require_once ZENTRYGATE_DIR . 'ZentryGate/Payments/StripeEventsRepo.php';

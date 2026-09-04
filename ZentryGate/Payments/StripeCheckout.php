@@ -5,7 +5,7 @@
  * Clase mínima para crear una Stripe Checkout Session (modo pago único).
  *
  * Requisitos:
- * - SDK Stripe sin Composer en: /ZentryGate/stripe/stripe-php (contiene init.php).
+ * - SDK Stripe instalado con Composer: ejecutar "composer install" en la raíz del plugin.
  *
  * Uso típico:
  *   $button = new \ZentryGate\Payments\StripeCheckoutButton($secretKey);
@@ -54,13 +54,9 @@ if (! class_exists ('\ZentryGate\Payments\StripeCheckout'))
 			$settings = get_option ('zentrygate_stripe_settings', [ ]);
 			$this->secretKey = $settings ['secret'] ?? '';
 
-			// Carga el SDK de Stripe sin Composer.
-			// Ajusta la ruta si tu estructura difiere.
-			$sdkPath = ZENTRYGATE_DIR . '/vendor/stripe-php/init.php';
-
-			if (file_exists ($sdkPath))
+			// El SDK lo carga el autoloader de Composer desde zentrygate.php.
+			if (ZENTRYGATE_STRIPE_READY)
 			{
-				require_once $sdkPath;
 				try
 				{
 					$this->client = new \Stripe\StripeClient ($this->secretKey);
@@ -79,7 +75,7 @@ if (! class_exists ('\ZentryGate\Payments\StripeCheckout'))
 			{
 				if (defined ('WP_DEBUG') && WP_DEBUG)
 				{
-					error_log ('[Stripe] No se encontró init.php en: ' . $sdkPath);
+					error_log ('[Stripe] SDK no disponible: ejecuta "composer install" en ' . ZENTRYGATE_DIR);
 				}
 			}
 		}
@@ -109,7 +105,7 @@ if (! class_exists ('\ZentryGate\Payments\StripeCheckout'))
 			// Validaciones básicas
 			if (! $this->ready || ! $this->client)
 			{
-				return [ 'ok' => false, 'error' => 'Stripe no está inicializado. Revisa la ruta del SDK o la clave secreta.'];
+				return [ 'ok' => false, 'error' => 'Stripe no está inicializado. Revisa la instalación del SDK (composer install) o la clave secreta.'];
 			}
 			if ($amountCents < 1)
 			{

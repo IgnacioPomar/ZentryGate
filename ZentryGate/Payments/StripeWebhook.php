@@ -25,15 +25,14 @@ class StripeWebhook
 
 		$settings = get_option ('zentrygate_stripe_settings', [ ]);
 		$secretKey = $settings ['secret'] ?? '';
-		$sdkPath = ZENTRYGATE_DIR . '/vendor/stripe-php/init.php';
 
-		if (! file_exists ($sdkPath))
+		// El SDK lo carga el autoloader de Composer desde zentrygate.php.
+		if (! ZENTRYGATE_STRIPE_READY)
 		{
-			if (defined ('WP_DEBUG') && WP_DEBUG) error_log ('[Stripe] init.php no encontrado en ' . $sdkPath);
+			if (defined ('WP_DEBUG') && WP_DEBUG) error_log ('[Stripe] SDK no disponible: ejecuta "composer install" en ' . ZENTRYGATE_DIR);
 			throw new \RuntimeException ('Stripe SDK no disponible');
 		}
 
-		require_once $sdkPath;
 		self::$client = new \Stripe\StripeClient ($secretKey);
 		$booted = true;
 	}
